@@ -28,8 +28,8 @@ class UnrollingModel(nn.Module):
                  'mu_d2_init':3,
                  },
                  use_norm=False,
-                 use_dist_conv=False,
-                 GNN_layers=1,
+                 use_dist_conv=True,
+                 GNN_layers=2,
                  ):
         super().__init__()
         self.num_blocks = num_blocks
@@ -183,6 +183,7 @@ class UnrollingModel(nn.Module):
         # print('pad y', y.shape, y[:,:,-1].sum())
         
         output = self.linear_extrapolation(y)
+        assert not torch.isnan(output).any(), 'linear extrapolation has nan'
         # print('pad output', output.size(), output[:,:,-1].sum())
 
         for i in range(self.num_blocks):
@@ -202,11 +203,13 @@ class UnrollingModel(nn.Module):
             admm_block.d_ew = d_ew
             output_new = admm_block(output, t) # in (batch, T, n_nodes, signal_channels)
             # skip connections
+            assert not torch.isnan(output_new).any(), 'output_new has NaN value'
             p = self.skip_connection_weights[i]
+            assert not torch.isnan(self.skip_connection_weights).any(), 'skip connection has NaN Values'
             output = p * output_new + (1-p) * output_old
         if self.use_norm:
             output = layer_recovery_on_data(output, self.norm_shape, mean, std)
-        return nn.ReLU()(output)            # 
+        return output        # 
 
 def get_max_in_dict(ew:dict):
     maxlist = []

@@ -77,7 +77,7 @@ class ADMMBlock(nn.Module):
         # pad x
         pad_x = torch.zeros_like(x[:,:,0], device=self.device).unsqueeze(2)
         pad_x = torch.cat((x, pad_x), dim=2)
-        return x - (self.u_ew.unsqueeze(-1) * pad_x[:,:,self.nearest_nodes.view(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
+        return x - (self.u_ew.unsqueeze(-1) * pad_x[:,:,self.nearest_nodes[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
 
     def apply_op_Ldr(self, x):
         '''
@@ -94,6 +94,7 @@ class ADMMBlock(nn.Module):
         '''
         x in (B, T, N, n_head, n_channels)
         '''
+        assert torch.isnan(x).any(), 'Ldr T x input x has NaN value'
         B, T = x.size(0), x.size(1)
         pad_x = torch.zeros_like(x[:,:,0], device=self.device).unsqueeze(2)
         pad_x = torch.cat((x, pad_x), dim=2)
@@ -315,4 +316,5 @@ class ADMMBlock(nn.Module):
         # combination weights
         #output = self.comb_fc(x.transpose(-2, -1)).squeeze(-1)
         output = torch.einsum('btnhc, h -> btnc', x, self.comb_weights)
+        # print('ADMM out', output.max(), output.min())
         return output

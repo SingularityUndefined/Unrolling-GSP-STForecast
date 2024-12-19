@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 from lib.unrolling_model import UnrollingModel
+from lib.backup_modules import visualise_graph
 from tqdm import tqdm
 import os
 import math
@@ -10,8 +11,8 @@ from utils import *
 seed_everything(3407)
 # Hyper-parameters
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-batch_size = 8
-learning_rate = 2e-3
+batch_size = 16
+learning_rate = 1e-3
 num_epochs = 30
 num_workers = 4
 
@@ -25,9 +26,21 @@ elif loss_name == 'Huber':
 elif loss_name == 'Mix':
     loss_fn = WeightedMSELoss(6, 12)
 
+def get_degrees(u_edges:torch.Tensor):
+    '''
+    u_edges: ndarray, in (n_edges, 2), already bidirectional
+    '''
+    n_edges = u_edges.size(0)
+    degrees = np.zeros((n_edges,), dtype=int)
+    for i in range(n_edges):
+        degrees[u_edges[i,0]] += 1
+        # degrees[u_edges[i,1]] += 1
+    return degrees
+
+k_hop = 4
 dataset_dir = '/mnt/qij/datasets/PEMS0X_data/'
-experiment_name = 'k_hop'
-dataset_name = 'PEMS04'
+experiment_name = f'{k_hop}_hop_add_self'
+dataset_name = 'PEMS08'
 T = 12
 t_in = 6
 stride = 3
@@ -35,15 +48,15 @@ stride = 3
 train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers)
 # print(len(train_loader), len(val_loader), len(test_loader))
 
+visualise_graph(train_set.graph_info['u_edges'], train_set.graph_info['u_dist'], dataset_name, dataset_name + '.png')
 # normalization:
 train_mean, train_std = train_set.data.mean(), train_set.data.std()
 
-num_admm_blocks = 5
+num_admm_blocks = 4
 num_heads = 4
 feature_channels = 6
-k_hop = 5
 ADMM_info = {
-                 'ADMM_iters':24,
+                 'ADMM_iters':25,
                  'CG_iters': 3,
                  'PGD_iters': 3,
                  'mu_u_init':3,
@@ -53,7 +66,9 @@ ADMM_info = {
 
 model_pretrained_path = None
 
-model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, train_set.signal_channel, feature_channels, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop).to(device)
+
+
+model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, train_set.signal_channel, feature_channels, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, graph_sigma=6).to(device)
 # 'UnrollingForecasting/MainExperiments/models/v2/PEMS04/direct_4b_4h_6f/val_15.pth'
 
 if model_pretrained_path is not None:
@@ -68,7 +83,7 @@ optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 scheduler = lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
 
 # 创建文件处理器
-log_dir = f'./logs/{experiment_name}'
+log_dir = f'/mnt/qij/Dec-Results/logs/{experiment_name}'
 os.makedirs(log_dir, exist_ok=True)
 log_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.log'
 logger = create_logger(log_dir, log_filename)
@@ -87,7 +102,7 @@ logger.info(f'ADMM info: {ADMM_info}')
 logger.info(f'graph info: nodes {train_set.n_nodes}, edges {train_set.n_edges}')
 logger.info('--------BEGIN TRAINING PROCESS------------')
 
-model_dir = os.path.join(f'./models/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f')
+model_dir = os.path.join(f'/mnt/qij/Dec-Results/models/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f')
 os.makedirs(model_dir, exist_ok=True)
 masked_flag = False
 # train models
@@ -112,6 +127,7 @@ for epoch in range(num_epochs):
         output = model(y) # in (B, T, nodes, 1)
 
         output = output * train_std + train_mean
+        output = nn.ReLU()(output)
 
         rec_mse += ((x[:,:t_in] - output[:,:t_in]) ** 2).mean().item()
         # only unknowns
@@ -121,7 +137,7 @@ for epoch in range(num_epochs):
         loss.backward()       
         optimizer.step()
         # clamp param
-        model.clamp_param(0.20, 0.20)
+        model.clamp_param(0.18, 0.18)
         # loggers
         running_loss += loss.item()
         # with torch.no_grad():
@@ -159,7 +175,9 @@ for epoch in range(num_epochs):
     logger.info(f'multiQ1, multiQ2, multiM: {glm.multiQ1.max().item()}, {glm.multiQ2.max().item()}, {glm.multiM.max().item()}')
     logger.info(f'rho, rho_u, rho_d: {admm_block.rho.max().item()}, {admm_block.rho_u.max().item()}, {admm_block.rho_d.max().item()}')
     logger.info(f'max alphas, {admm_block.alpha_x.max().item():.4f}, {admm_block.alpha_zu.max().item():.4f}, {admm_block.alpha_zd.max().item():.4f}')
+    logger.info(f'min alphas, {admm_block.alpha_x.min().item():.4f}, {admm_block.alpha_zu.min().item():.4f}, {admm_block.alpha_zd.min().item():.4f}')
     logger.info(f'max betas, {admm_block.beta_x.max().item():.4f}, {admm_block.beta_zu.max().item():.4f}, {admm_block.beta_zd.max().item():.4f}')
+    logger.info(f'min betas, {admm_block.beta_x.min().item():.4f}, {admm_block.beta_zu.min().item():.4f}, {admm_block.beta_zd.min().item():.4f}')
 
     # validation
     if (epoch + 1) % 6 == 0:

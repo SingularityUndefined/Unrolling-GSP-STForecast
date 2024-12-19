@@ -38,8 +38,10 @@ class GNNExtrapolation(nn.Module):
         # n_nodes = n_nodes - 1
         # aggregation
         agg, _ = graph_aggregation(x, self.nearest_nodes, self.nearest_dists, self.n_heads, self.device, self.sigma) # in (B, t_in, N, n_heads, n_channels)
+        assert not torch.isnan(agg).any(), 'extrapolation agg has nan value'
         agg = agg.permute(0,2,4,1,3).reshape(B, n_nodes, n_channels, -1) # in (B, N, n_channels, t_in * n_heads)
         y = self.shrink(agg).permute(0,3,1,2)
+        assert not torch.isnan(y).any(), f'agg in {agg.max(), agg.min()}'
         # print('[x, y]', x.shape, y.shape)
         return torch.cat([x, y], dim=1)
 ##################################################################################
@@ -47,9 +49,12 @@ class GNNExtrapolation(nn.Module):
 
 def graph_aggregation(x:torch.Tensor, nearest_nodes:torch.Tensor, nearest_dist:torch.Tensor, n_heads, device, sigma=6):
     '''
-    nearest_nodes: (N, k)
-    nearest_dist: (N, k)
+    nearest_nodes: (N, k + 1) (self)
+    nearest_dist: (N, k + 1)
     '''
+    # nearest_nodes = nearest_nodes[:, 1:]
+    # nearest_dist = nearest_dist[:, 1:]
+    assert not torch.isnan(x).any(), 'x has NaN value'
     B, T, n_nodes, n_in = x.size(0), x.size(1), x.size(2), x.size(-1) # already padded
     # pad x
     pad_x = torch.zeros_like(x[:,:,0]).unsqueeze(2)
@@ -57,16 +62,30 @@ def graph_aggregation(x:torch.Tensor, nearest_nodes:torch.Tensor, nearest_dist:t
     lambda_ = torch.arange(1, n_heads + 1, 1, dtype=torch.float, device=device) / n_heads # 
     # reshape
     # print(nearest_nodes.shape)
+    # k = nearest_dist.size(1)
     nearest_dist, nearest_nodes = nearest_dist.view(-1), nearest_nodes.view(-1) # in (N *k)
     weights = torch.exp(- (nearest_dist[:,None] ** 2) * lambda_ / (sigma ** 2)) # in (N*k, n_heads)
-    # print('x', x.shape, 'weights', weights.shape)
+    weights[nearest_nodes == -1,:] = 0
+    assert not torch.isnan(weights).any(), 'GCN weights NaN'
+    # print('weights < 1 max', weights[weights < 1].max(), weights[weights > 0].min())
+    # # normalize?
+    # degree = weights.view(n_nodes, -1, n_heads).sum(1, keepdim=True).repeat(1, k, 1).view(-1, n_heads)
+    # inv_degree = torch.where(degree > 0, torch.ones((1), device=device) / degree, torch.zeros((1), device=device))
+    # inv_degree = torch.where(inv_degree == torch.inf, 0, inv_degree)
+    # weights = weights * inv_degree
+    
     if x.ndim == 4:
         agg = (pad_x[:,:,nearest_nodes,None] * weights[:,:,None]).view(B, T, n_nodes, -1, n_heads, n_in).sum(3)
+        # agg = agg + x.unsqueeze(3)
     else:
         agg = (pad_x[:,:,nearest_nodes] * weights[:,:,None]).view(B, T, n_nodes, -1, n_heads, n_in).sum(3)
-
+        # agg = agg + x
+    assert not torch.isnan(agg).any(), 'agg has NaN'
+    # agg = agg + x.unsqueeze()
+    nearest_dist[nearest_dist == torch.inf] = 0
     dist_agg = (weights * nearest_dist[:,None]).view(n_nodes, -1, n_heads).sum(1)
-
+    assert not torch.isnan(dist_agg).any(), 'dist_agg has NaN'
+    # print(dist_agg.max(), dist_agg.min())
     # pad agg
     # pad_agg = torch.zeros_like(agg[:,:,0], device=device).unsqueeze(2)
     # print(pad_agg.shape, agg.shape)
@@ -99,6 +118,7 @@ class GraphConvolutionLayer(nn.Module):
         if self.use_dist_conv:
             dist_agg = dist_agg[None, None, :,:].repeat(B, T, 1, 1).unsqueeze(-1)
             agg = torch.cat((agg, dist_agg), -1)
+            # print('agg', agg.max(), agg.min())
         # else: use Laplacian embedding (spatial embeddings)
         # time axis aggregation
         agg[:,1:] = (1 - self.alpha) * agg[:,1:] + self.alpha * agg[:,:-1]
@@ -118,7 +138,7 @@ class FeatureExtractor(nn.Module):
         self.use_dist_conv = use_dist_conv
         self.n_layers = n_layers
 
-        self.input_layer = GraphConvolutionLayer(n_in, n_out, n_nodes, n_heads, self.nearest_nodes, self.nearest_dists, device, sigma, alpha, True)
+        self.input_layer = GraphConvolutionLayer(n_in, n_out, n_nodes, n_heads, self.nearest_nodes, self.nearest_dists, device, sigma, alpha, self.use_dist_conv)
         # GNN layers
         if self.n_layers > 1:
             self.GNN = nn.Sequential(*[GraphConvolutionLayer(n_out, n_out, n_nodes, n_heads, self.nearest_nodes, self.nearest_dists, device, sigma, alpha, False)
@@ -127,6 +147,7 @@ class FeatureExtractor(nn.Module):
 
     def forward(self, x):
         out = self.input_layer(x)
+        assert not torch.isnan(out).any(), 'GCN Feature Extractor 1st layer NaN' 
         # print('GCN 1:', out.size())
         if self.n_layers == 1:
             return out
@@ -179,22 +200,24 @@ class GraphLearningModule(nn.Module):
         weights = {}
 
         # pad features
+        # nn = self.nearest_nodes[:, 1:]
         pad_features = torch.zeros_like(features[:,:,0], device=self.device).unsqueeze(2)
         pad_features = torch.cat((features, pad_features), dim=2)
 
-        feature_j = pad_features[:,:,self.nearest_nodes.view(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)
+        feature_j = pad_features[:,:,self.nearest_nodes[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)
 
         df = features.unsqueeze(3) - feature_j # in (B, T, N, k, n_heads, n_channels)
         Mdf = torch.einsum('hij, btnehj -> btnehi', self.multiM, df) # in (B, T, N, k, n_heads, n_channels)
         weights = torch.exp(- (Mdf ** 2).sum(-1)) # in (B, T, N, k, n_heads)
         # mask weights
-        mask = (self.nearest_nodes == -1).unsqueeze(0).unsqueeze(1).unsqueeze(4).repeat(B, T, 1, 1, self.n_heads)
+        mask = (self.nearest_nodes[:,1:] == -1).unsqueeze(0).unsqueeze(1).unsqueeze(4).repeat(B, T, 1, 1, self.n_heads)
         weights = weights * (~mask)
 
         degree = weights.sum(3) # in (B, T, N, n_heads)
-        degree_j = degree[:,:,self.nearest_nodes.view(-1)].view(B, T, self.n_nodes, -1, self.n_heads) # in (B, T, N, k, n_heads)
+        degree_j = degree[:,:,self.nearest_nodes[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads) # in (B, T, N, k, n_heads)
         degree_multiply = torch.sqrt(degree.unsqueeze(3) * degree_j)
-        inv_degree_multiply = torch.where(degree_multiply > 1e-6, torch.ones((1,), device=self.device) / degree_multiply, torch.zeros((1,), device=self.device))
+        inv_degree_multiply = torch.where(degree_multiply > 0, torch.ones((1,), device=self.device) / degree_multiply, torch.zeros((1,), device=self.device))
+        inv_degree_multiply = torch.where(inv_degree_multiply == torch.inf, 0, inv_degree_multiply)
         weights = weights * inv_degree_multiply
         # print('undirected_weights', weights.shape)
         return weights # in (B, T, N, k, n_heads)
@@ -225,7 +248,8 @@ class GraphLearningModule(nn.Module):
         weights = weights * (~mask)
         in_degree = weights.sum(3)
         # print('in_degree', in_degree.max(), in_degree.min(), torch.isnan(in_degree).any())
-        inv_in_degree = torch.where(in_degree > 1e-6, torch.ones((1,), device=self.device) / in_degree, torch.zeros((1,), device=self.device))
+        inv_in_degree = torch.where(in_degree > 0, torch.ones((1,), device=self.device) / in_degree, torch.zeros((1,), device=self.device))
+        inv_in_degree = torch.where(inv_in_degree == torch.inf, torch.zeros((1), device=self.device), inv_in_degree)
         # print('inv_in_degree', inv_in_degree.max(), inv_in_degree.min(), torch.isnan(inv_in_degree).any())
         weights = weights * inv_in_degree.unsqueeze(3)
         # print(weights.max(), weights.min(), torch.isnan(weights).any())

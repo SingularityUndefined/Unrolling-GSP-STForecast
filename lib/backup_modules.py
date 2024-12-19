@@ -167,16 +167,19 @@ def find_k_nearest_neighbors(n_nodes, edges:torch.Tensor, distances:torch.Tensor
     for i in range(len(edges)): 
         graph.add_edge(edges[i, 0], edges[i, 1], weight=dist[i])
     nearest_neighbors = {}
-    nearest_nodes = - torch.ones((n_nodes, k), dtype=torch.int, device=device)
-    nearest_distance = torch.zeros((n_nodes, k), device=device)
+    nearest_nodes = - torch.ones((n_nodes, k + 1), dtype=torch.int, device=device)
+    nearest_distance = torch.full((n_nodes, k + 1), float('inf'), device=device) # torch.zeros((n_nodes, k), device=device)
 
     for node in range(n_nodes): # 使用 Dijkstra 算法计算从当前节点出发的最短路径 
         distances = nx.single_source_dijkstra_path_length(graph, node) # 将结果按距离排序，并获取最近的 N 个节点 
         closest_nodes = heapq.nsmallest(k + 1, distances.items(), key=lambda x: x[1]) # 存储结果 
         # padding -1
-        k_true = len(closest_nodes) - 1
-        nearest_nodes[node, :k_true] = torch.tensor([i for (i,_) in closest_nodes if i != node], device=device)
-        nearest_distance[node, :k_true] = torch.tensor([j for (_,j) in closest_nodes if j != 0], device=device)
+        k_true = len(closest_nodes) #  - 1
+        # print(k_true, closest_nodes, )
+        # nearest_nodes[node, :k_true] = torch.tensor([i for (i,_) in closest_nodes if i != node], device=device)
+        # nearest_distance[node, :k_true] = torch.tensor([j for (_,j) in closest_nodes if j != 0], device=device)
+        nearest_nodes[node, :k_true] = torch.tensor([i for (i,_) in closest_nodes], device=device)
+        nearest_distance[node, :k_true] = torch.tensor([j for (_,j) in closest_nodes], device=device)
     return nearest_nodes, nearest_distance
 
 
