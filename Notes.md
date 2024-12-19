@@ -51,9 +51,17 @@ Results (30 epochs, test dataset, lr=0.001)
 
 | Dataset | (nodes, edges) |batch size | ADMM (blocks, layers) | CGD (iters) | k |sigma | RMSE | MAE | time per epoch|
 | :------:|:---:|:--: |:-------------------:| :---------:|:---:|:-----:|:----:|:---:|:---:|
-| PeMS04| (307, 680)  |8 |         5, 25        |  3          | 5  | 6     |21.8154 |10.4353 |17min5s |
-|PeMS08| (170, 590) |16 | 5, 25 | 3 | 4 | 6 | 19.0935 | 11.6487 | 7min5s|
+| PeMS04| (307, 680)  |8 |         4, 25        |  3          | 4  | 6     |21.8154 |10.4353 |11min13s |
+|PeMS08| (170, 590) |16 | 4, 25 | 3 | 4 | 6 | 19.0935 | 11.6487 | 7min5s|
 
+Results saved in `/mnt/qij/Dec-Results/logs/4_hop_add_self/PEMS08_MSE_4b25_4h_6f.log` and `/mnt/qij/Dec-Results/logs/5_hop_add_self/PEMS04_MSE_5b25_4h_6f.log`
+
+Change the activation function in GCN extrapolation to None. PeMS08 trim to (0, 0.18)
+
+| Dataset | (nodes, edges) |batch size | ADMM (blocks, layers) | CGD (iters) | k |sigma | RMSE | MAE | time per epoch|
+| :------:|:---:|:--: |:-------------------:| :---------:|:---:|:-----:|:----:|:---:|:---:|
+| PeMS04 | (307, 680)  |8 |         5, 25        |  3          | 5  | 6     |21.8154 |10.4353 |17min5s |
+|PeMS08| (170, 590) |16 | 5, 25 | 3 | 4 | 6 | 19.0935 | 11.6487 | 11min13s|
 
 To discuss:
 1. Graph Feature Extractor: for now, we use $w_{ij}=-\exp(-\frac{d^2(i,j)}{\sigma^2})$, but different graphs has different $d$:

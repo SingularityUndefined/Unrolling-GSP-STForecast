@@ -29,7 +29,7 @@ class GNNExtrapolation(nn.Module):
         assert T > t_in, 't_in > T'
         # model in markovian
         # self.MLP = nn.Sequential(nn.Linear(t_in * n_heads, hidden_size), nn.ReLU(), nn.Linear(hidden_size, T - t_in), nn.ReLU())
-        self.shrink = nn.Sequential(nn.Linear(t_in * n_heads, T - t_in), nn.ReLU())
+        self.shrink = nn.Linear(t_in * n_heads, T - t_in) # nn.Sequential(nn.Linear(t_in * n_heads, T - t_in), nn.SELU())
         self.sigma = sigma
         
     def forward(self, x):
@@ -106,7 +106,7 @@ class GraphConvolutionLayer(nn.Module):
         self.nearest_nodes = nearest_nodes
         self.nearest_dist = nearest_dist
         self.sigma = sigma
-        self.relu = nn.ReLU()
+        self.relu = nn.ReLU() # TODO: ReLU or SELU? as a conbination?
         self.alpha = alpha
         # self.use_dist_conv = use_dist_conv
 

@@ -10,8 +10,8 @@ from utils import *
 
 seed_everything(3407)
 # Hyper-parameters
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-batch_size = 16
+device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+batch_size = 12
 learning_rate = 1e-3
 num_epochs = 30
 num_workers = 4
@@ -52,7 +52,7 @@ visualise_graph(train_set.graph_info['u_edges'], train_set.graph_info['u_dist'],
 # normalization:
 train_mean, train_std = train_set.data.mean(), train_set.data.std()
 
-num_admm_blocks = 4
+num_admm_blocks = 5
 num_heads = 4
 feature_channels = 6
 ADMM_info = {
