@@ -47,26 +47,53 @@ Works done:
 
 5. Debug on the PeMS03 dataset.
 
-Results (30 epochs, test dataset, lr=0.001)
+Results (30 epochs, test dataset, lr=0.001) saved in `/mnt/qij/Dec-Results/logs/4_hop_add_self/PEMS08_MSE_4b25_4h_6f.log` and `/mnt/qij/Dec-Results/logs/5_hop_add_self/PEMS04_MSE_5b25_4h_6f.log`
 
-| Dataset | (nodes, edges) |batch size | ADMM (blocks, layers) | CGD (iters) | k |sigma | RMSE | MAE | time per epoch|
+| Dataset | (nodes, edges) |batch size | ADMM (blocks, layers) | CGD (iters) | k |$\sigma$ | RMSE | MAE | time per epoch|
 | :------:|:---:|:--: |:-------------------:| :---------:|:---:|:-----:|:----:|:---:|:---:|
 | PeMS04| (307, 680)  |8 |         4, 25        |  3          | 4  | 6     |21.8154 |10.4353 |11min13s |
-|PeMS08| (170, 590) |16 | 4, 25 | 3 | 4 | 6 | 19.0935 | 11.6487 | 7min5s|
+|PeMS08| (170, 590) |16 | 4, 25 | 3 | 5 | 6 | 19.0935 | 11.6487 | 7min5s|
 
-Results saved in `/mnt/qij/Dec-Results/logs/4_hop_add_self/PEMS08_MSE_4b25_4h_6f.log` and `/mnt/qij/Dec-Results/logs/5_hop_add_self/PEMS04_MSE_5b25_4h_6f.log`
+<!-- Change the activation function in GCN extrapolation to None. PeMS08 trim to (0, 0.18)
 
-Change the activation function in GCN extrapolation to None. PeMS08 trim to (0, 0.18)
-
-| Dataset | (nodes, edges) |batch size | ADMM (blocks, layers) | CGD (iters) | k |sigma | RMSE | MAE | time per epoch|
+| Dataset | (nodes, edges) |batch size | ADMM (blocks, layers) | CGD (iters) | k |$\sigma$ | RMSE | MAE | time per epoch|
 | :------:|:---:|:--: |:-------------------:| :---------:|:---:|:-----:|:----:|:---:|:---:|
-| PeMS04 | (307, 680)  |8 |         5, 25        |  3          | 5  | 6     |21.8154 |10.4353 |17min5s |
-|PeMS08| (170, 590) |16 | 5, 25 | 3 | 4 | 6 | 19.0935 | 11.6487 | 11min13s|
+| PeMS04 (6 epoch) | (307, 680)  |6 |         5, 25        |  3          | 6  | 15     |23.5424 |10.5416 |17min5s |
+|PeMS08 (18 epoch)| (170, 590) |12 | 5, 25 | 3 | 4 | 6 | 17.4363 | 7.2175 | 11min13s|
+
+Results in `/mnt/qij/Dec-Results/logs/6_hop_add_self_norelu` -->
+
+More results with $\sigma=20$: has NaN issue in extrapolation (agg doesn't contain NaN, but the result contains NaN.). WHY? it seems that sigma should be quite small so that padding itself doesn't makes sense? Why would the first linear layer have NaN? Gradient explosion?
+
+try with $k=6, \sigma=6$, stable. Results saved in `/mnt/qij/Dec-Results/logs/6_hop_add_self_norelu`.
+| Dataset | (nodes, edges) |batch size | ADMM (blocks, layers) | CGD (iters) | k |$\sigma$ | RMSE | MAE | time per epoch|
+| :------:|:---:|:--: |:-------------------:| :---------:|:---:|:-----:|:----:|:---:|:---:|
+| PeMS04 (12 epoch) | (307, 680)  |6 |         5, 25        |  3          | 6  | 6     |21.7905 |9.2187 |22min44s |
+|PeMS08 (12 epoch)| (170, 590) |12 | 5, 25 | 3 | 6 | 6 | 18.6480 | 8.7849 | 11min13s|
+|PeMS08 (18 epoch)| (170, 590) |12 | 5, 25 | 3 | 6 | 6 | 17.3584 | 7.2107 | 11min13s|
+
+try with extrapolation with SELU, $\sigma=15$ is ok, $k=6$ is okay. Results in `Dec-Results/logs/6_hop_selu`. So what's the point of the GCN feature extractor if $sigma \ll \min(d)$?
+
+| Dataset | (nodes, edges) |batch size | ADMM (blocks, layers) | CGD (iters) | k |$\sigma$ | RMSE | MAE | time per epoch|
+| :------:|:---:|:--: |:-------------------:| :---------:|:---:|:-----:|:----:|:---:|:---:|
+| PeMS04 (6 epoch, explode) | (307, 680)  |6 |         5, 25        |  3          | 6  | 15     |23.3915 |11.6454 |23min32s |
+|PeMS08 (12 epoch)| (170, 590) |12 | 5, 25 | 3 | 6 | 15 | 20.8812 | 13.1768 | 11min13s|
+|PeMS08 (18 epoch)| (170, 590) |12 | 5, 25 | 3 | 6 | 15 | 17.4074 | 7.3773 | 11min13s| 
+
+Try with PeMS04 and $\sigma=3$
+| Dataset | (nodes, edges) |batch size | ADMM (blocks, layers) | CGD (iters) | k |$\sigma$ | RMSE | MAE | time per epoch|
+| :------:|:---:|:--: |:-------------------:| :---------:|:---:|:-----:|:----:|:---:|:---:|
+| PeMS04 (6 epoch, explode) | (307, 680)  |6 |         5, 25        |  3          | 6  | 3     |23.3915 |11.6454 |23min32s |
+
+Is it true that smaller $\sigma$ leads to better result? If so, Feature extraction is not necessary.
+
+Finally, what's the function of $\sigma$?
+
 
 To discuss:
 1. Graph Feature Extractor: for now, we use $w_{ij}=-\exp(-\frac{d^2(i,j)}{\sigma^2})$, but different graphs has different $d$:
     - in PeMS04 and PeMS08, $d\sim 10^0 - 10^2$
-    - in PeMS03 and PeMS07, $d \sim 10^{-1} - 10^1$
+    - in PeMS03 and PeMS07, $d \sim 10^{-1} - 10^1$, actually costs but not 
     
     For PeMS04 we set $\sigma=6$ and the weights actually falls to close to 0 or 1 (also difficult to normalize). Only when $d < 18$ the weights would be larger than 1e-4. **Larger d will cause NaN in graph learning module. BUT WHY?** So we want to use other feature convolutions:
     

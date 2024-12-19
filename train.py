@@ -11,7 +11,7 @@ from utils import *
 seed_everything(3407)
 # Hyper-parameters
 device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
-batch_size = 12
+batch_size = 6
 learning_rate = 1e-3
 num_epochs = 30
 num_workers = 4
@@ -37,10 +37,10 @@ def get_degrees(u_edges:torch.Tensor):
         # degrees[u_edges[i,1]] += 1
     return degrees
 
-k_hop = 4
+k_hop = 6
 dataset_dir = '/mnt/qij/datasets/PEMS0X_data/'
-experiment_name = f'{k_hop}_hop_add_self'
-dataset_name = 'PEMS08'
+experiment_name = f'{k_hop}_hop_selu'
+dataset_name = 'PEMS04'
 T = 12
 t_in = 6
 stride = 3
@@ -48,7 +48,7 @@ stride = 3
 train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers)
 # print(len(train_loader), len(val_loader), len(test_loader))
 
-visualise_graph(train_set.graph_info['u_edges'], train_set.graph_info['u_dist'], dataset_name, dataset_name + '.png')
+# visualise_graph(train_set.graph_info['u_edges'], train_set.graph_info['u_dist'], dataset_name, dataset_name + '.png')
 # normalization:
 train_mean, train_std = train_set.data.mean(), train_set.data.std()
 
@@ -63,12 +63,13 @@ ADMM_info = {
                  'mu_d1_init':3,
                  'mu_d2_init':3,
                  }
+graph_sigma = 6
 
 model_pretrained_path = None
 
 
 
-model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, train_set.signal_channel, feature_channels, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, graph_sigma=6).to(device)
+model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, train_set.signal_channel, feature_channels, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, graph_sigma=graph_sigma).to(device)
 # 'UnrollingForecasting/MainExperiments/models/v2/PEMS04/direct_4b_4h_6f/val_15.pth'
 
 if model_pretrained_path is not None:
@@ -92,6 +93,7 @@ logger.info('#################################################')
 total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 logger.info(f'pretrained path: {model_pretrained_path}')
 logger.info(f'learning k hop: {k_hop}')
+logger.info(f'graph sigma: {graph_sigma}')
 logger.info(f'batch size: {batch_size}')
 logger.info(f'learning rate: {learning_rate}')
 logger.info(f'Loss function: {loss_name}')

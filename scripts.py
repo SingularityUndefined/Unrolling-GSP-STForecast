@@ -82,3 +82,17 @@ degrees = get_degrees(n_nodes, u_edges)
 print(degrees.max(), degrees.min())
 print(Counter(degrees))
 
+# CDF curve
+def plot_cdf(dist:torch.Tensor, bins, dataset_name):
+    plt.hist(dist, bins=30, cumulative=True, density=True, histtype='step', label='CDF')
+    # 添加标题和标签
+    plt.grid(True)
+    plt.title('Cumulative Distribution Function')
+    plt.xlabel('Data')
+    plt.ylabel('Cumulative Probability')
+    plt.legend()
+    plt.savefig(dataset_name + '.png', dpi=800)
+
+plot_cdf(u_dist, 30, dataset_name)
+# 创建示例数据
+

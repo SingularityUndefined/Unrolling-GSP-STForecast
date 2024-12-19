@@ -29,7 +29,8 @@ class GNNExtrapolation(nn.Module):
         assert T > t_in, 't_in > T'
         # model in markovian
         # self.MLP = nn.Sequential(nn.Linear(t_in * n_heads, hidden_size), nn.ReLU(), nn.Linear(hidden_size, T - t_in), nn.ReLU())
-        self.shrink = nn.Linear(t_in * n_heads, T - t_in) # nn.Sequential(nn.Linear(t_in * n_heads, T - t_in), nn.SELU())
+        # self.shrink = nn.Linear(t_in * n_heads, T - t_in) 
+        self.shrink = nn.Sequential(nn.Linear(t_in * n_heads, T - t_in), nn.SELU())
         self.sigma = sigma
         
     def forward(self, x):
@@ -41,7 +42,7 @@ class GNNExtrapolation(nn.Module):
         assert not torch.isnan(agg).any(), 'extrapolation agg has nan value'
         agg = agg.permute(0,2,4,1,3).reshape(B, n_nodes, n_channels, -1) # in (B, N, n_channels, t_in * n_heads)
         y = self.shrink(agg).permute(0,3,1,2)
-        assert not torch.isnan(y).any(), f'agg in {agg.max(), agg.min()}'
+        assert not torch.isnan(y).any(), f'weights has NaN :{torch.isnan(self.shrink[0].weight).any()}'
         # print('[x, y]', x.shape, y.shape)
         return torch.cat([x, y], dim=1)
 ##################################################################################
@@ -66,6 +67,9 @@ def graph_aggregation(x:torch.Tensor, nearest_nodes:torch.Tensor, nearest_dist:t
     nearest_dist, nearest_nodes = nearest_dist.view(-1), nearest_nodes.view(-1) # in (N *k)
     weights = torch.exp(- (nearest_dist[:,None] ** 2) * lambda_ / (sigma ** 2)) # in (N*k, n_heads)
     weights[nearest_nodes == -1,:] = 0
+    # normalize weights?
+    weights[weights < 1e-8] = 0
+
     assert not torch.isnan(weights).any(), 'GCN weights NaN'
     # print('weights < 1 max', weights[weights < 1].max(), weights[weights > 0].min())
     # # normalize?
