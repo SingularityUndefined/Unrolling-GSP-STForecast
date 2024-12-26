@@ -67,7 +67,7 @@ batch_size = 12
 num_workers = 4
 dataset_dir = '/mnt/qij/datasets/PEMS0X_data/'
 experiment_name = 'k_hop'
-dataset_name = 'PEMS04'
+dataset_name = 'PEMS07'
 T = 12
 t_in = 6
 stride = 3
@@ -84,15 +84,16 @@ print(Counter(degrees))
 
 # CDF curve
 def plot_cdf(dist:torch.Tensor, bins, dataset_name):
-    plt.hist(dist, bins=30, cumulative=True, density=True, histtype='step', label='CDF')
+    plt.hist(dist.numpy(), bins, cumulative=True, density=True, histtype='step', label='CDF')
     # 添加标题和标签
     plt.grid(True)
-    plt.title('Cumulative Distribution Function')
+    plt.title('Cumulative Distribution Function for ' + dataset_name)
     plt.xlabel('Data')
     plt.ylabel('Cumulative Probability')
     plt.legend()
-    plt.savefig(dataset_name + '.png', dpi=800)
+    plt.savefig('cdf_' + dataset_name + '.png', dpi=800)
 
-plot_cdf(u_dist, 30, dataset_name)
+print(u_dist.shape)
+plot_cdf(u_dist, 60, dataset_name)
 # 创建示例数据
 
