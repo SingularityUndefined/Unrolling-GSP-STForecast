@@ -96,51 +96,16 @@ def gcn_aggregation(x:torch.Tensor, nearest_nodes:torch.Tensor, nearest_dist:tor
     # agg = torch.cat((agg, pad_agg), dim=2)
     return agg, dist_agg # in (B, T, N, n_heads, n_in), (N, n_heads)
 
-def graph_linear_aggregation(x:torch.Tensor, nearest_nodes:torch.Tensor, nearest_dist:torch.Tensor, n_heads, device):
-    '''
-    nearest_nodes: (N, k + 1) (self)
-    nearest_dist: (N, k + 1)
-    '''
-    assert not torch.isnan(x).any(), 'x has NaN value'
-    B, T, n_nodes, n_in = x.size(0), x.size(1), x.size(2), x.size(-1) # already padded
-    # pad x
-    pad_x = torch.zeros_like(x[:,:,0]).unsqueeze(2)
-    pad_x = torch.cat((x, pad_x), dim=2)
-    lambda_ = torch.arange(1, n_heads + 1, 1, dtype=torch.float, device=device) / n_heads # 
-    # reshape
-    # print(nearest_nodes.shape)
-    # k = nearest_dist.size(1)
-    nearest_dist, nearest_nodes = nearest_dist.view(-1), nearest_nodes.view(-1) # in (N *k)
-    weights = torch.exp(- (nearest_dist[:,None] ** 2) * lambda_ / (sigma ** 2)) # in (N*k, n_heads)
-    weights[nearest_nodes == -1,:] = 0
-    # normalize weights?
-    weights[weights < 1e-8] = 0
+class GraphAggregationLayer(nn.Module):
+    def __init__(self, nearest_nodes, n_heads, device):
+        super().__init__()
+        self.nearest_nodes = nearest_nodes
+        self.n_heads = n_heads
+        self.device = device
+        
+    def forward(self, x):
+        pass
 
-    assert not torch.isnan(weights).any(), 'GCN weights NaN'
-    # print('weights < 1 max', weights[weights < 1].max(), weights[weights > 0].min())
-    # # normalize?
-    # degree = weights.view(n_nodes, -1, n_heads).sum(1, keepdim=True).repeat(1, k, 1).view(-1, n_heads)
-    # inv_degree = torch.where(degree > 0, torch.ones((1), device=device) / degree, torch.zeros((1), device=device))
-    # inv_degree = torch.where(inv_degree == torch.inf, 0, inv_degree)
-    # weights = weights * inv_degree
-    
-    if x.ndim == 4:
-        agg = (pad_x[:,:,nearest_nodes,None] * weights[:,:,None]).view(B, T, n_nodes, -1, n_heads, n_in).sum(3)
-        # agg = agg + x.unsqueeze(3)
-    else:
-        agg = (pad_x[:,:,nearest_nodes] * weights[:,:,None]).view(B, T, n_nodes, -1, n_heads, n_in).sum(3)
-        # agg = agg + x
-    assert not torch.isnan(agg).any(), 'agg has NaN'
-    # agg = agg + x.unsqueeze()
-    nearest_dist[nearest_dist == torch.inf] = 0
-    dist_agg = (weights * nearest_dist[:,None]).view(n_nodes, -1, n_heads).sum(1)
-    assert not torch.isnan(dist_agg).any(), 'dist_agg has NaN'
-    # print(dist_agg.max(), dist_agg.min())
-    # pad agg
-    # pad_agg = torch.zeros_like(agg[:,:,0], device=device).unsqueeze(2)
-    # print(pad_agg.shape, agg.shape)
-    # agg = torch.cat((agg, pad_agg), dim=2)
-    return agg, dist_agg # in (B, T, N, n_heads, n_in), (N, n_heads)
 
 class GraphConvolutionLayer(nn.Module):
     def __init__(self, n_in, n_out, n_nodes, n_heads, nearest_nodes, nearest_dist, device, sigma=6, alpha=0.2, use_dist_conv=False):
