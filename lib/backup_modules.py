@@ -30,7 +30,7 @@ class SimpleLinearExtrapolation(nn.Module):
 # primal prediction with linear extrapolation
     
 
-def laplacian_embeddings(k, n_nodes, edges, u_dist, device, sigma=6, eps=1e-6):
+def laplacian_embeddings(k, n_nodes, edges, u_dist, device, sigma=6, eps=1e-10):
     assert k > 0 and k < n_nodes, f'0 < k < {n_nodes}'
     # compute adjs
     adj = torch.zeros((n_nodes, n_nodes), device=device)
@@ -49,6 +49,20 @@ def laplacian_embeddings(k, n_nodes, edges, u_dist, device, sigma=6, eps=1e-6):
     if Q_topk.is_complex():
         Q_topk = Q_topk.real
     return Q_topk
+
+
+def position_embedding(time_list, tid_dim, diw_dim, device):
+    '''
+    time_list: (B, t)
+    '''
+    B = time_list.size(0)
+    tid_emb = torch.zeros((B, tid_dim), device=device)
+    diw_emb = torch.zeros((B, diw_dim), device=device)
+    tid_list = time_list % (12 * 24)
+    diw_list = (time_list // (12 * 24)) % 7 # in (B, t)
+    # tid_emb[::2] = 
+    
+        
 
 class SpatialTemporalEmbedding(nn.Module):
     def __init__(self, k, n_nodes, edges, u_dist, sigma, device, tid_dim=10, diw_dim=2, use_t_emb=True):

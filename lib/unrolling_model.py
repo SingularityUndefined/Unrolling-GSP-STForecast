@@ -28,7 +28,7 @@ class UnrollingModel(nn.Module):
                  'mu_d2_init':3,
                  },
                  use_norm=False,
-                 use_dist_conv=True,
+                 use_dist_conv=False,
                  GNN_layers=2,
                  ):
         super().__init__()
@@ -42,7 +42,7 @@ class UnrollingModel(nn.Module):
         # define a graph connection pattern
         self.kNN = None
         self.nearsest_nodes, self.nearest_dists = find_k_nearest_neighbors(graph_info['n_nodes'], graph_info['u_edges'], graph_info['u_dist'], k_hop, device=self.device)
-        self.linear_extrapolation = GNNExtrapolation(graph_info['n_nodes'], t_in, T, self.nearsest_nodes, self.nearest_dists, n_heads, device, graph_sigma)
+        self.linear_extrapolation = GNNExtrapolation(graph_info['n_nodes'], t_in, T, self.nearsest_nodes, n_heads, device)
 
         self.model_blocks = nn.ModuleList([])
 
@@ -54,15 +54,16 @@ class UnrollingModel(nn.Module):
                     'feature_extractor': FeatureExtractor(
                         n_in=signal_channels,
                         n_out=feature_channels,
-                        n_nodes=graph_info['n_nodes'],
+                        # n_nodes=graph_info['n_nodes'],
                         n_heads=n_heads,
                         nearest_nodes=self.nearsest_nodes,
-                        nearest_dists=self.nearest_dists,
+                        # nearest_dists=self.nearest_dists,
                         device=device,
                         n_layers=GNN_layers,
-                        sigma=graph_sigma,
+                        # sigma=graph_sigma,
                         alpha=GNN_alpha,
-                        use_dist_conv=use_dist_conv,
+                        # use_dist_conv=use_dist_conv,
+                        use_graph_agg=True
                     ),
                     'ADMM_block': ADMMBlock(
                         T=T,

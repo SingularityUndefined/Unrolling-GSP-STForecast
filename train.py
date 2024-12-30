@@ -7,11 +7,22 @@ from tqdm import tqdm
 import os
 import math
 from utils import *
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--cuda', help='CUDA device', type=int)
+parser.add_argument('--dataset', help='dataset name', type=str)
+parser.add_argument('--batchsize', help='batch size', type=int)
+parser.add_argument('--tin', help='time input', default=6)
+parser.add_argument('--tout', help='time output', default=6)
+parser.add_argument('--hop', help='k for kNN', default=6)
+parser.add_argument('--numblock', help='number of admm blocks', default=5)
+args = parser.parse_args()
 
 seed_everything(3407)
 # Hyper-parameters
-device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
-batch_size = 6
+device = torch.device('cuda:' + str(args.cuda) if torch.cuda.is_available() else 'cpu')
+batch_size = args.batchsize
 learning_rate = 1e-3
 num_epochs = 30
 num_workers = 4
@@ -24,7 +35,7 @@ if loss_name == 'MSE':
 elif loss_name == 'Huber':
     loss_fn = nn.HuberLoss(delta=1)
 elif loss_name == 'Mix':
-    loss_fn = WeightedMSELoss(6, 12)
+    loss_fn = WeightedMSELoss(args.tin, args.tin + args.tout)
 
 def get_degrees(u_edges:torch.Tensor):
     '''
@@ -37,12 +48,12 @@ def get_degrees(u_edges:torch.Tensor):
         # degrees[u_edges[i,1]] += 1
     return degrees
 
-k_hop = 6
+k_hop = args.hop
 dataset_dir = '/mnt/qij/datasets/PEMS0X_data/'
-experiment_name = f'{k_hop}_hop_selu'
-dataset_name = 'PEMS04'
-T = 12
-t_in = 6
+experiment_name = f'{k_hop}_hop_concatFE'
+dataset_name = args.dataset
+T = args.tin + args.tout
+t_in = args.tin
 stride = 3
 
 train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers)

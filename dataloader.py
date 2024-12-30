@@ -72,10 +72,6 @@ class TrafficDataset(Dataset):
         self.stride = stride
         self.return_time = return_time
         data = np.load(os.path.join(data_folder, data_file))['data'] # (T, n_in)
-
-        # normalization
-        # mean, std = data.mean(), data.std()
-        # data = (data - mean) / std
         
         print('nan_count', len(data[np.isnan(data)]))
         # print('datashape', data.shape, data[0:2])
@@ -114,6 +110,7 @@ class TrafficDataset(Dataset):
 
     def __len__(self):
         return (self.data.shape[0] - self.T) // self.stride
+    
     def __getitem__(self, index):
         y = self.data[index * self.stride:index * self.stride + self.t] # in (t, n_nodes, 1)
         x = self.data[index * self.stride:index * self.stride + self.T] # in (T, n_nodes, 1)

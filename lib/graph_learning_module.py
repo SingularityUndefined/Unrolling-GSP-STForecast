@@ -17,7 +17,9 @@ from lib.backup_modules import k_hop_neighbors, LR_guess, find_k_nearest_neighbo
 class GNNExtrapolation(nn.Module):
     '''GNN extrapolation
     '''
-    def __init__(self, n_nodes, t_in, T, nearest_nodes, nearest_dists, n_heads, device, sigma):
+    def __init__(self, n_nodes, t_in, T, nearest_nodes, 
+                 # nearest_dists,
+                   n_heads, device):
         super().__init__()
         self.device = device
         self.n_heads = n_heads
@@ -25,20 +27,23 @@ class GNNExtrapolation(nn.Module):
         self.t_in = t_in
         self.T = T
         self.nearest_nodes = nearest_nodes
-        self.nearest_dists = nearest_dists
+        # self.nearest_dists = nearest_dists
         assert T > t_in, 't_in > T'
         # model in markovian
         # self.MLP = nn.Sequential(nn.Linear(t_in * n_heads, hidden_size), nn.ReLU(), nn.Linear(hidden_size, T - t_in), nn.ReLU())
         # self.shrink = nn.Linear(t_in * n_heads, T - t_in) 
         self.shrink = nn.Sequential(nn.Linear(t_in * n_heads, T - t_in), nn.SELU())
-        self.sigma = sigma
+        # self.sigma = sigma
         
     def forward(self, x):
         # signals in (Batch, T, n_nodes, n_channels)?
         B, t_in, n_nodes, n_channels = x.size()
         # n_nodes = n_nodes - 1
         # aggregation
-        agg, _ = gcn_aggregation(x, self.nearest_nodes, self.nearest_dists, self.n_heads, self.device, self.sigma) # in (B, t_in, N, n_heads, n_channels)
+        # agg, _ = gcn_aggregation(x, self.nearest_nodes, self.nearest_dists, self.n_heads, self.device, self.sigma) # in (B, t_in, N, n_heads, n_channels)
+
+        agg = multihead_aggregation(x, self.n_heads, self.device)
+
         assert not torch.isnan(agg).any(), 'extrapolation agg has nan value'
         agg = agg.permute(0,2,4,1,3).reshape(B, n_nodes, n_channels, -1) # in (B, N, n_channels, t_in * n_heads)
         y = self.shrink(agg).permute(0,3,1,2)
@@ -47,6 +52,12 @@ class GNNExtrapolation(nn.Module):
         return torch.cat([x, y], dim=1)
 ##################################################################################
 
+def multihead_aggregation(x:torch.Tensor, n_heads, device):
+    lambda_ = torch.arange(1, n_heads + 1, 1, dtype=torch.float, device=device) / n_heads
+    # no aggregation, only linear transform
+    lambda_ = torch.exp(-lambda_ ** 2)
+    x_agg = x.unsqueeze(-2) * lambda_.unsqueeze(-1) # in (B, T, N, n_heads, n_in)
+    return x_agg
 
 def gcn_aggregation(x:torch.Tensor, nearest_nodes:torch.Tensor, nearest_dist:torch.Tensor, n_heads, device, sigma=6):
     '''
@@ -97,15 +108,48 @@ def gcn_aggregation(x:torch.Tensor, nearest_nodes:torch.Tensor, nearest_dist:tor
     return agg, dist_agg # in (B, T, N, n_heads, n_in), (N, n_heads)
 
 class GraphAggregationLayer(nn.Module):
-    def __init__(self, nearest_nodes, n_heads, device):
+    def __init__(self, n_in, n_out, nearest_nodes, n_heads, in_heads, device, alpha=0.2):
         super().__init__()
         self.nearest_nodes = nearest_nodes
+        self.k = nearest_nodes.size(1) - 1
+        self.n_nodes = nearest_nodes.size(0)
         self.n_heads = n_heads
         self.device = device
+        self.in_heads = in_heads
+        # self.agg_mat = Parameter(torch.ones((n_heads, self.k + 1, in_heads), device=self.device) / torch.sqrt(n_heads * (self.k + 1) * in_heads), requires_grad=True) # TODO:  can be reduced 
+        # self.agg_fc = nn.Linear(self.k + 1, 1)
+        # if in_heads == 1:
+            # self.multi_fc = nn.Linear(1, n_heads)
+        # self.bias = Parameter(torch.zeros(n_heads, device=self.device), requires_grad=True)
+        self.agg_fc = nn.Linear(self.in_heads * (self.k + 1), self.n_heads)
+        self.out_fc = nn.Linear(n_in, n_out)
+        self.alpha = alpha
+        self.relu = nn.ReLU()
         
     def forward(self, x):
-        pass
-
+        '''
+        x in (B, T, n_nodes, n_heads*, n_in)
+        '''
+        # pad x
+        B, T, n_in = x.size(0), x.size(1), x.size(-1)
+        pad_x = torch.zeros_like(x[:,:,0]).unsqueeze(2)
+        pad_x = torch.cat((x, pad_x), dim=2)
+        # get signal neighbor list for all signals
+        if pad_x.ndim == 4:
+            pad_x = pad_x.unsqueeze(-2)
+            
+        head_in = pad_x.size(-2)
+        x_nn = pad_x[:,:, self.nearest_nodes.view(-1)].reshape(B, T, self.n_nodes, -1, n_in) # in (B, T, N, k * head_in, n_in) # .reshape(B, T, self.n_nodes, -1, head_in, n_in) # in (B, T, N, k, head_in, n_in)
+        x_agg = self.agg_fc(x_nn.transpose(-1, -2)).transpose(-1, -2) #TODO: reduce more parameters
+        # print(x_agg.shape)
+        x_agg = self.out_fc(x_agg)
+        # # custom linear layer
+        # x_agg = torch.einsum('btnkhi, gkh -> btngi', x_nn, self.agg_mat) # in (B, T, n_nodes, n_heads, n_in)
+        # x_agg = x_agg + self.bias[None, None, None, :, None]
+        # cross-time aggregation 
+        x_agg[:,1:] = (1 - self.alpha) * x_agg[:,1:] + self.alpha * x_agg[:,:-1]
+        # activation
+        return self.relu(x_agg)
 
 class GraphConvolutionLayer(nn.Module):
     def __init__(self, n_in, n_out, n_nodes, n_heads, nearest_nodes, nearest_dist, device, sigma=6, alpha=0.2, use_dist_conv=False):
@@ -142,32 +186,46 @@ class GraphConvolutionLayer(nn.Module):
         return self.relu(out)
 
 class FeatureExtractor(nn.Module):
-    def __init__(self, n_in, n_out, n_nodes, n_heads, nearest_nodes, nearest_dists, device, n_layers=3, sigma=6, alpha=0.2, use_dist_conv=False):
+    # def __init__(self, n_in, n_out, n_nodes, n_heads, nearest_nodes, nearest_dists, device, n_layers=3, sigma=6, alpha=0.2, use_dist_conv=False):
+    def __init__(self, n_in, n_out, n_heads, nearest_nodes, device, n_layers=3, alpha=0.2, use_graph_agg=True):
         super().__init__()
         self.n_in = n_in
         self.n_out = n_out
         self.nearest_nodes = nearest_nodes
-        self.nearest_dists = nearest_dists
-        self.sigma = sigma
+        # self.nearest_dists = nearest_dists
         self.alpha = alpha
-        self.use_dist_conv = use_dist_conv
         self.n_layers = n_layers
+        self.device = device
+        self.use_graph_agg = use_graph_agg
 
-        self.input_layer = GraphConvolutionLayer(n_in, n_out, n_nodes, n_heads, self.nearest_nodes, self.nearest_dists, device, sigma, alpha, self.use_dist_conv)
+        if self.use_graph_agg:
+            self.input_layer = GraphAggregationLayer(n_in, n_out, self.nearest_nodes, n_heads, 1, self.device, alpha)
+            if self.n_layers > 1:
+                self.GNN = nn.Sequential(*[GraphAggregationLayer(n_out, n_out, self.nearest_nodes, n_heads, n_heads, self.device, alpha) for i in range(n_layers - 1)])
+        else:
+            self.nn = nn.Sequential(nn.Linear(1, n_heads), nn.ReLU()) # n_nodes, n_in -> n_nodes, n_head, n_in
+
+        # self.input_layer = GraphConvolutionLayer(n_in, n_out, n_nodes, n_heads, self.nearest_nodes, self.nearest_dists, device, sigma, alpha, self.use_dist_conv)
         # GNN layers
-        if self.n_layers > 1:
-            self.GNN = nn.Sequential(*[GraphConvolutionLayer(n_out, n_out, n_nodes, n_heads, self.nearest_nodes, self.nearest_dists, device, sigma, alpha, False)
-                for i in range(n_layers - 1)
-            ])
+        # if self.n_layers > 1:
+        #     self.GNN = nn.Sequential(*[GraphConvolutionLayer(n_out, n_out, n_nodes, n_heads, self.nearest_nodes, self.nearest_dists, device, sigma, alpha, False)
+        #         for i in range(n_layers - 1)
+        #     ])
 
     def forward(self, x):
-        out = self.input_layer(x)
-        assert not torch.isnan(out).any(), 'GCN Feature Extractor 1st layer NaN' 
+        if self.use_graph_agg:
+            out = self.input_layer(x)
+            assert not torch.isnan(out).any(), 'GCN Feature Extractor 1st layer NaN' 
         # print('GCN 1:', out.size())
-        if self.n_layers == 1:
-            return out
+            if self.n_layers == 1:
+                return out
+            else:
+                return self.GNN(out)
         else:
-            return self.GNN(out)
+            return self.nn(x.unsqueeze(-1)).transpose(-1, -2) # in (B, T, N, n_nodes, n_in)
+            # use multihead_agg
+
+
 # return k-hop edges 
 
 class GraphLearningModule(nn.Module):
@@ -220,6 +278,7 @@ class GraphLearningModule(nn.Module):
         pad_features = torch.cat((features, pad_features), dim=2)
 
         feature_j = pad_features[:,:,self.nearest_nodes[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)
+        # print(features.size(), feature_j.size())
 
         df = features.unsqueeze(3) - feature_j # in (B, T, N, k, n_heads, n_channels)
         Mdf = torch.einsum('hij, btnehj -> btnehi', self.multiM, df) # in (B, T, N, k, n_heads, n_channels)
