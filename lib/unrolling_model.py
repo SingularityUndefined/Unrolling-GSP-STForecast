@@ -13,7 +13,7 @@ class UnrollingModel(nn.Module):
                  feature_channels,
                  k_hop, 
                  GNN_alpha=0.2,
-                 graph_sigma=6,
+                 # graph_sigma=6,
                  graph_info = {
                      'n_nodes': None,
                      'u_edges': None,
@@ -28,8 +28,14 @@ class UnrollingModel(nn.Module):
                  'mu_d2_init':3,
                  },
                  use_norm=False,
-                 use_dist_conv=False,
+                 # use_dist_conv=False,
                  GNN_layers=2,
+                 use_st_emb=False,
+                 st_emb_info = {
+                     'spatial_dim': 5,
+                     'tid_dim': 6,
+                     'diw_dim': 4
+                 }
                  ):
         super().__init__()
         self.num_blocks = num_blocks
@@ -38,6 +44,7 @@ class UnrollingModel(nn.Module):
         self.t_in = t_in
         self.n_heads = n_heads
         self.use_norm = use_norm
+        self.use_st_emb = use_st_emb
 
         # define a graph connection pattern
         self.kNN = None
@@ -47,6 +54,9 @@ class UnrollingModel(nn.Module):
         self.model_blocks = nn.ModuleList([])
 
         self.skip_connection_weights = Parameter(torch.ones((num_blocks,), device=self.device) * 0.95, requires_grad=True)
+
+        # spatiotemporal embeddings
+        
 
         for i in range(self.num_blocks):
             self.model_blocks.append(nn.ModuleDict(

@@ -122,4 +122,84 @@ class TrafficDataset(Dataset):
             return torch.Tensor(y), torch.Tensor(x)
 
 
+def directed_physical_graph(adj_mat):
+    u_edges = []
+    u_distance = []
+    for i in range(adj_mat.shape[0]):
+        for j in range(adj_mat.shape[1]):
+            if i != j and adj_mat[i, j] > 0: 
+                u_edges.append([i, j]) 
+                u_distance.append(adj_mat[i, j])
+    n_edges = len(u_edges)
+    u_edges = np.array(u_edges)
+    u_distance = np.array(u_distance)
+    return n_edges, u_edges, u_distance
+
+class DirectedTrafficDataset(Dataset):
+    def __init__(self, data_folder, adj_mat_file, data_file, T, t, stride, split='train', n_nodes=None, return_time=False) -> None:
+        '''
+        train:val:test = 6:2:2
+        Components:
+            data: in (T_total, n_nodes, n_channels)
+            adj_mat: in (n_nodes, n_nodes)
+            n_nodes: int, number of nodes
+            n_edges: int, number of edges (directed)
+            u_edges: in (n_edges, 2)
+            u_distance: in (n_edges)
+        '''
+        super().__init__()
+        # time series
+        self.T = T
+        self.t = t
+        self.stride = stride
+        self.return_time = return_time
+        data = np.load(os.path.join(data_folder, data_file)) # (T, n_in)
+
+        # normalization
+        # mean, std = data.mean(), data.std()
+        # data = (data - mean) / std
+        
+        print('nan_count', len(data[np.isnan(data)]))
+        # print('datashape', data.shape, data[0:2])
+        self.signal_channel = data.shape[-1]
+        data_len = data.shape[0]
+        # print('dat_len', data_len)
+        assert split in ['train', 'val', 'test'], 'split should in train, val or test'
+        if split == 'train':
+            self.data_begin = 0
+            self.data = data[0:int(data_len * 0.6)]
+        elif split == 'val':
+            self.data_begin = int(data_len * 0.6)
+            self.data = data[int(data_len * 0.6):int(data_len * 0.8)]
+        elif split == 'test':
+            self.data_begin = int(data_len * 0.8)
+            self.data = data[int(data_len * 0.8):]
+        # graph
+        self.adj_mat = np.load(os.path.join(data_folder, adj_mat_file))
+        self.n_nodes = self.adj_mat.shape[0]
+        self.n_edges, self.u_edges, self.u_distance = physical_graph(self.adj_mat)
+        self.u_edges = torch.Tensor(self.u_edges).type(torch.long)#, dtype=torch.long)
+        self.u_distance = torch.Tensor(self.u_distance)
+        self.d_edges = torch.cat([self.u_edges, torch.arange(0, self.n_nodes)[:,None] + torch.zeros((2,), dtype=torch.long)], 0)
+        self.graph_info = {
+            'n_nodes': self.n_nodes,
+            'u_edges': self.u_edges,
+            'u_dist': self.u_distance
+        }
+        # print(self.d_edges)
+
+    def __len__(self):
+        return (self.data.shape[0] - self.T) // self.stride
+
+    def __getitem__(self, index):
+        y = self.data[index * self.stride:index * self.stride + self.t] # in (t, n_nodes, n_channels)
+        x = self.data[index * self.stride:index * self.stride + self.T] # in (T, n_nodes, n_channels)
+        # model(y) = x
+        time = torch.arange(0, self.T).type(torch.long) + index * self.stride + self.data_begin
+        if self.return_time:
+            return torch.Tensor(y), torch.Tensor(x), time
+        else:
+            return torch.Tensor(y), torch.Tensor(x)
+
+
 

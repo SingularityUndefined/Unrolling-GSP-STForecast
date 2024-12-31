@@ -51,36 +51,42 @@ def laplacian_embeddings(k, n_nodes, edges, u_dist, device, sigma=6, eps=1e-10):
     return Q_topk
 
 
-def position_embedding(time_list, tid_dim, diw_dim, device):
+def position_embedding(time_list, half_tid_dim, half_diw_dim, device):
     '''
     time_list: (B, t)
     '''
-    B = time_list.size(0)
-    tid_emb = torch.zeros((B, tid_dim), device=device)
-    diw_emb = torch.zeros((B, diw_dim), device=device)
+    B, t = time_list.size(0), time_list.size(1)
+    tid_emb = torch.zeros((B, t, 2 * half_tid_dim), device=device)
+    diw_emb = torch.zeros((B, t, 2 * half_diw_dim), device=device)
     tid_list = time_list % (12 * 24)
     diw_list = (time_list // (12 * 24)) % 7 # in (B, t)
-    # tid_emb[::2] = 
-    
-        
+    tid_pos_multiplier = torch.pow(10000, torch.range(0, half_tid_dim, device=device) / half_tid_dim)
+    tid_emb[:,:,0::2] = torch.sin(tid_list[:,:,None] / tid_pos_multiplier) # (B, t, )
+    tid_emb[:,:,1::2] = torch.cos(tid_list[:,:,None] / tid_pos_multiplier)
+    diw_pos_multiplier = torch.pow(10000, torch.range(0, half_diw_dim, device=device) / half_diw_dim)
+    diw_emb[:,:,0::2] = torch.sin(diw_list[:,:,None] / diw_pos_multiplier)
+    diw_emb[:,:,1::2] = torch.cos(diw_list[:,:,None] / diw_pos_multiplier)
 
-class SpatialTemporalEmbedding(nn.Module):
-    def __init__(self, k, n_nodes, edges, u_dist, sigma, device, tid_dim=10, diw_dim=2, use_t_emb=True):
+    emb = torch.cat((tid_emb, diw_emb), dim=-1)
+    return emb
+
+    
+class SpatialTemporalEmbedding(nn.Module): # Non-parametric
+    def __init__(self, n_nodes, edges, u_dist, sigma, device, s_dim, tid_dim=10, diw_dim=2):
         super().__init__()
-        self.k = k
+        self.s_dim = s_dim
         self.n_nodes = n_nodes
         self.edges = edges
         self.u_dist = u_dist.to(device)
         self.sigma = sigma
         self.device = device
         # unchanged spatial embedding information
-        self.spatial_emb = laplacian_embeddings(self.k, self.n_nodes, self.edges, self.u_dist, self.device, self.sigma) # in (n_nodes, k)
-        self.use_t_emb = use_t_emb
-        self.tid_dim = tid_dim
-        self.diw_dim = diw_dim
-        if use_t_emb:
-            self.time_in_day_emb = nn.Embedding(12*24, tid_dim)
-            self.day_in_week_emb = nn.Embedding(7, diw_dim)
+        self.spatial_emb = laplacian_embeddings(self.s_dim, self.n_nodes, self.edges, self.u_dist, self.device, self.sigma) # in (n_nodes, k)
+        assert tid_dim % 2 == 0, 'tid_dim should be even'
+        assert diw_dim % 2 == 0, 'diw_dim should be even'
+        # self.use_t_emb = use_t_emb
+        self.half_tid_dim = tid_dim // 2
+        self.half_diw_dim = diw_dim // 2
 
     def forward(self, x, t_list=None):
         '''
@@ -89,18 +95,47 @@ class SpatialTemporalEmbedding(nn.Module):
         return (B, T, n_nodes, Dx + Ds + Dt)
         '''
         B, T = x.size(0), x.size(1)
-        # add spatial embeddings
-        output = torch.cat([x, self.spatial_emb[None, None,:,:].repeat(B, T, 1,1)], dim=-1)
-        # temporal embeddings:
-        if self.use_t_emb:
-            assert t_list is not None, 't_list should not be None'
-            time_of_day = t_list % (12 * 24)
-            day_of_week = (t_list // (12 * 24)) % 7
-            tid_emb = self.time_in_day_emb(time_of_day)
-            diw_emb = self.day_in_week_emb(day_of_week)
-            t_emb = torch.cat([tid_emb, diw_emb], dim=-1) # in (B, T, tid_dim + diw_dim)
-            output = torch.cat([output, t_emb[:,:,None,:].repeat(1,1,self.n_nodes, 1)], dim=-1)
-        return output
+        t_emb = position_embedding(t_list, self.half_tid_dim, self.half_diw_dim, self.device).unsqueeze(2).repeat(1, 1, self.n_nodes, 1) # in (B, T, t_dim)
+        s_emb = self.spatial_emb.unsqueeze(0).unsqueeze(1).repeat(B, T, 1, 1)
+        return torch.cat((x, s_emb, t_emb), -1) 
+
+# class SpatialTemporalEmbedding(nn.Module):
+#     def __init__(self, k, n_nodes, edges, u_dist, sigma, device, tid_dim=10, diw_dim=2, use_t_emb=True):
+#         super().__init__()
+#         self.k = k
+#         self.n_nodes = n_nodes
+#         self.edges = edges
+#         self.u_dist = u_dist.to(device)
+#         self.sigma = sigma
+#         self.device = device
+#         # unchanged spatial embedding information
+#         self.spatial_emb = laplacian_embeddings(self.k, self.n_nodes, self.edges, self.u_dist, self.device, self.sigma) # in (n_nodes, k)
+#         self.use_t_emb = use_t_emb
+#         self.tid_dim = tid_dim
+#         self.diw_dim = diw_dim
+#         if use_t_emb:
+#             self.time_in_day_emb = nn.Embedding(12*24, tid_dim)
+#             self.day_in_week_emb = nn.Embedding(7, diw_dim)
+
+#     def forward(self, x, t_list=None):
+#         '''
+#         x in (B, T, n_nodes, 1)
+#         t in (B, T) t[batch, i] = t_i
+#         return (B, T, n_nodes, Dx + Ds + Dt)
+#         '''
+#         B, T = x.size(0), x.size(1)
+#         # add spatial embeddings
+#         output = torch.cat([x, self.spatial_emb[None, None,:,:].repeat(B, T, 1,1)], dim=-1)
+#         # temporal embeddings:
+#         if self.use_t_emb:
+#             assert t_list is not None, 't_list should not be None'
+#             time_of_day = t_list % (12 * 24)
+#             day_of_week = (t_list // (12 * 24)) % 7
+#             tid_emb = self.time_in_day_emb(time_of_day)
+#             diw_emb = self.day_in_week_emb(day_of_week)
+#             t_emb = torch.cat([tid_emb, diw_emb], dim=-1) # in (B, T, tid_dim + diw_dim)
+#             output = torch.cat([output, t_emb[:,:,None,:].repeat(1,1,self.n_nodes, 1)], dim=-1)
+#         return output
 
 def LR_guess(y, T, device): # actually we won't use them
     '''
@@ -180,7 +215,8 @@ def find_k_nearest_neighbors(n_nodes, edges:torch.Tensor, distances:torch.Tensor
     graph = nx.DiGraph()
     for i in range(len(edges)): 
         graph.add_edge(edges[i, 0], edges[i, 1], weight=dist[i])
-    nearest_neighbors = {}
+    # nearest_neighbors = {}
+    print(n_nodes, k)
     nearest_nodes = - torch.ones((n_nodes, k + 1), dtype=torch.int, device=device)
     nearest_distance = torch.full((n_nodes, k + 1), float('inf'), device=device) # torch.zeros((n_nodes, k), device=device)
 

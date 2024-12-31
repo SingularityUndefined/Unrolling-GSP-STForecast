@@ -13,10 +13,10 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--cuda', help='CUDA device', type=int)
 parser.add_argument('--dataset', help='dataset name', type=str)
 parser.add_argument('--batchsize', help='batch size', type=int)
-parser.add_argument('--tin', help='time input', default=6)
-parser.add_argument('--tout', help='time output', default=6)
-parser.add_argument('--hop', help='k for kNN', default=6)
-parser.add_argument('--numblock', help='number of admm blocks', default=5)
+parser.add_argument('--tin', help='time input', default=6, type=int)
+parser.add_argument('--tout', help='time output', default=6, type=int)
+parser.add_argument('--hop', help='k for kNN', default=6, type=int)
+parser.add_argument('--numblock', help='number of admm blocks', default=5, type=int)
 args = parser.parse_args()
 
 seed_everything(3407)
@@ -50,7 +50,7 @@ def get_degrees(u_edges:torch.Tensor):
 
 k_hop = args.hop
 dataset_dir = '/mnt/qij/datasets/PEMS0X_data/'
-experiment_name = f'{k_hop}_hop_concatFE'
+experiment_name = f'{k_hop}_hop_concatFE_{args.tin}_{args.tout}'
 dataset_name = args.dataset
 T = args.tin + args.tout
 t_in = args.tin
@@ -74,13 +74,13 @@ ADMM_info = {
                  'mu_d1_init':3,
                  'mu_d2_init':3,
                  }
-graph_sigma = 6
+# graph_sigma = 6
 
 model_pretrained_path = None
 
 
 
-model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, train_set.signal_channel, feature_channels, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, graph_sigma=graph_sigma).to(device)
+model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, train_set.signal_channel, feature_channels, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop).to(device)
 # 'UnrollingForecasting/MainExperiments/models/v2/PEMS04/direct_4b_4h_6f/val_15.pth'
 
 if model_pretrained_path is not None:
@@ -104,7 +104,7 @@ logger.info('#################################################')
 total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 logger.info(f'pretrained path: {model_pretrained_path}')
 logger.info(f'learning k hop: {k_hop}')
-logger.info(f'graph sigma: {graph_sigma}')
+# logger.info(f'graph sigma: {graph_sigma}')
 logger.info(f'batch size: {batch_size}')
 logger.info(f'learning rate: {learning_rate}')
 logger.info(f'Loss function: {loss_name}')
