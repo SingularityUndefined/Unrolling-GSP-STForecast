@@ -30,7 +30,7 @@ class SimpleLinearExtrapolation(nn.Module):
 # primal prediction with linear extrapolation
     
 
-def laplacian_embeddings(k, n_nodes, edges, u_dist, device, sigma=6, eps=1e-10):
+def laplacian_embeddings(k, n_nodes, edges, u_dist, device, sigma, eps=1e-10, normalized=False):
     assert k > 0 and k < n_nodes, f'0 < k < {n_nodes}'
     # compute adjs
     adj = torch.zeros((n_nodes, n_nodes), device=device)
@@ -38,8 +38,11 @@ def laplacian_embeddings(k, n_nodes, edges, u_dist, device, sigma=6, eps=1e-10):
         adj[edges[i,0], edges[i,1]] = math.exp(- u_dist[i] ** 2 / sigma ** 2)
     # eigenvalues
     diagonals = adj.sum(0)
-    diagonal_x = torch.sqrt(diagonals[:,None] * diagonals[None,:])
-    laplacian = torch.eye(n_nodes).to(device) - adj / diagonal_x
+    if normalized:
+        diagonal_x = torch.sqrt(diagonals[:,None] * diagonals[None,:])
+        laplacian = torch.eye(n_nodes).to(device) - adj / diagonal_x # normalized? or not? not!
+    else:
+        laplacian = torch.diag(diagonals) - adj
     L, Q = torch.linalg.eigh(laplacian)
     # histogram of laplacian 
     print('non_zero eigenvalues', (L>eps).sum())
@@ -51,40 +54,48 @@ def laplacian_embeddings(k, n_nodes, edges, u_dist, device, sigma=6, eps=1e-10):
     return Q_topk
 
 
-def position_embedding(time_list, half_tid_dim, half_diw_dim, device):
+def position_embedding(time_list, half_t_dim, half_tid_dim, half_diw_dim, device):
     '''
     time_list: (B, t)
     '''
     B, t = time_list.size(0), time_list.size(1)
+    t_emb = torch.zeros((B, t, 2 * half_t_dim), device=device)
     tid_emb = torch.zeros((B, t, 2 * half_tid_dim), device=device)
     diw_emb = torch.zeros((B, t, 2 * half_diw_dim), device=device)
     tid_list = time_list % (12 * 24)
     diw_list = (time_list // (12 * 24)) % 7 # in (B, t)
-    tid_pos_multiplier = torch.pow(10000, torch.range(0, half_tid_dim, device=device) / half_tid_dim)
+    t_pos_multiplier = torch.pow(10000, torch.arange(0, half_t_dim, device=device) / half_t_dim)
+    t_emb[:,:,0::2] = torch.sin(time_list[:,:,None] / t_pos_multiplier)
+    t_emb[:,:,1::2] = torch.cos(time_list[:,:,None] / t_pos_multiplier)
+
+    tid_pos_multiplier = torch.pow(10000, torch.arange(0, half_tid_dim, device=device) / half_tid_dim)
+    # print(half_tid_dim, tid_pos_multiplier.size())
     tid_emb[:,:,0::2] = torch.sin(tid_list[:,:,None] / tid_pos_multiplier) # (B, t, )
     tid_emb[:,:,1::2] = torch.cos(tid_list[:,:,None] / tid_pos_multiplier)
-    diw_pos_multiplier = torch.pow(10000, torch.range(0, half_diw_dim, device=device) / half_diw_dim)
+    diw_pos_multiplier = torch.pow(10000, torch.arange(0, half_diw_dim, device=device) / half_diw_dim)
     diw_emb[:,:,0::2] = torch.sin(diw_list[:,:,None] / diw_pos_multiplier)
     diw_emb[:,:,1::2] = torch.cos(diw_list[:,:,None] / diw_pos_multiplier)
 
-    emb = torch.cat((tid_emb, diw_emb), dim=-1)
+    emb = torch.cat((t_emb, tid_emb, diw_emb), dim=-1)
     return emb
 
     
 class SpatialTemporalEmbedding(nn.Module): # Non-parametric
-    def __init__(self, n_nodes, edges, u_dist, sigma, device, s_dim, tid_dim=10, diw_dim=2):
+    def __init__(self, n_nodes, edges, u_dist, sigma_ratio, device, s_dim, t_dim=10, tid_dim=10, diw_dim=2):
         super().__init__()
         self.s_dim = s_dim
         self.n_nodes = n_nodes
         self.edges = edges
         self.u_dist = u_dist.to(device)
-        self.sigma = sigma
+        self.sigma = self.u_dist.max() / sigma_ratio
         self.device = device
         # unchanged spatial embedding information
         self.spatial_emb = laplacian_embeddings(self.s_dim, self.n_nodes, self.edges, self.u_dist, self.device, self.sigma) # in (n_nodes, k)
+        assert t_dim % 2 == 0, 't_dim should be even'
         assert tid_dim % 2 == 0, 'tid_dim should be even'
         assert diw_dim % 2 == 0, 'diw_dim should be even'
         # self.use_t_emb = use_t_emb
+        self.half_t_dim = t_dim // 2
         self.half_tid_dim = tid_dim // 2
         self.half_diw_dim = diw_dim // 2
 
@@ -95,9 +106,13 @@ class SpatialTemporalEmbedding(nn.Module): # Non-parametric
         return (B, T, n_nodes, Dx + Ds + Dt)
         '''
         B, T = x.size(0), x.size(1)
-        t_emb = position_embedding(t_list, self.half_tid_dim, self.half_diw_dim, self.device).unsqueeze(2).repeat(1, 1, self.n_nodes, 1) # in (B, T, t_dim)
         s_emb = self.spatial_emb.unsqueeze(0).unsqueeze(1).repeat(B, T, 1, 1)
-        return torch.cat((x, s_emb, t_emb), -1) 
+        x =  torch.cat((x, s_emb), -1)
+        if t_list is not None:
+            t_emb = position_embedding(t_list, self.half_t_dim, self.half_tid_dim, self.half_diw_dim, self.device).unsqueeze(2).repeat(1, 1, self.n_nodes, 1) 
+            # print(x.size(), t_emb.size())
+            x = torch.cat((x, t_emb), -1)
+        return x
 
 # class SpatialTemporalEmbedding(nn.Module):
 #     def __init__(self, k, n_nodes, edges, u_dist, sigma, device, tid_dim=10, diw_dim=2, use_t_emb=True):

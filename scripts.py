@@ -8,6 +8,11 @@ Task 1 Check all the connections in graph
 from dataloader import physical_graph, TrafficDataset
 import numpy as np
 import torch
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--dataset', help='dataset name', type=str)
+args = parser.parse_args()
 
 def get_degrees(n_nodes, u_edges:torch.Tensor):
     '''
@@ -41,14 +46,14 @@ def visualise_graph(G, dataset_name, fig_name):
     plt.title(dataset_name)
     plt.savefig(fig_name, dpi=800)
 
-def find_k_nearest_neighbors(edges:torch.Tensor, distances:torch.Tensor, k):
+def find_k_nearest_neighbors(edges:torch.Tensor, distances:torch.Tensor, k, dataset_name):
     edges = edges.detach().cpu().numpy()
     dist = distances.detach().cpu().numpy()
     graph = nx.DiGraph()
     for i in range(len(edges)): 
         graph.add_edge(edges[i, 0], edges[i, 1], weight=dist[i])
     
-    visualise_graph(graph, 'PeMS04', 'PeMS04.png')
+    visualise_graph(graph, dataset_name, dataset_name + '.png')
     nearest_neighbors = {}
     # print('nodes', graph.nodes)
 
@@ -67,12 +72,12 @@ batch_size = 12
 num_workers = 4
 dataset_dir = '/mnt/qij/datasets/PEMS0X_data/'
 experiment_name = 'k_hop'
-dataset_name = 'PEMS07'
+dataset_name = args.dataset
 T = 12
 t_in = 6
 stride = 3
 
-train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers)
+train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, False)
 
 u_edges, u_dist = train_set.u_edges, train_set.u_distance
 n_nodes = train_set.n_nodes
@@ -81,9 +86,11 @@ print(u_edges.shape, u_dist.shape)
 degrees = get_degrees(n_nodes, u_edges)
 print(degrees.max(), degrees.min())
 print(Counter(degrees))
+find_k_nearest_neighbors(u_edges, u_dist, 6, args.dataset)
 
 # CDF curve
 def plot_cdf(dist:torch.Tensor, bins, dataset_name):
+    plt.figure()
     plt.hist(dist.numpy(), bins, cumulative=True, density=True, histtype='step', label='CDF')
     # 添加标题和标签
     plt.grid(True)
@@ -94,6 +101,7 @@ def plot_cdf(dist:torch.Tensor, bins, dataset_name):
     plt.savefig('cdf_' + dataset_name + '.png', dpi=800)
 
 print(u_dist.shape)
+# visualise_graph()
 plot_cdf(u_dist, 60, dataset_name)
 # 创建示例数据
 

@@ -17,13 +17,17 @@ parser.add_argument('--tin', help='time input', default=6, type=int)
 parser.add_argument('--tout', help='time output', default=6, type=int)
 parser.add_argument('--hop', help='k for kNN', default=6, type=int)
 parser.add_argument('--numblock', help='number of admm blocks', default=5, type=int)
+parser.add_argument('--numlayer', help='number of admm layers', default=25, type=int)
+parser.add_argument('--cgiter', help='CGD iterations', default=3, type=int)
+parser.add_argument('--seed', help='random seed', default=3407, type=int)
+parser.add_argument('--lr', help='learning rate', default=0.001, type=float)
 args = parser.parse_args()
 
-seed_everything(3407)
-# Hyper-parameters
+seed_everything(args.seed)
+# Hyper-parameter[s
 device = torch.device('cuda:' + str(args.cuda) if torch.cuda.is_available() else 'cpu')
 batch_size = args.batchsize
-learning_rate = 1e-3
+learning_rate = args.lr# 1e-3
 num_epochs = 30
 num_workers = 4
 
@@ -56,19 +60,22 @@ T = args.tin + args.tout
 t_in = args.tin
 stride = 3
 
-train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers)
+return_time = True
+
+train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time)
 # print(len(train_loader), len(val_loader), len(test_loader))
+signal_channels = train_set.signal_channel
 
 # visualise_graph(train_set.graph_info['u_edges'], train_set.graph_info['u_dist'], dataset_name, dataset_name + '.png')
 # normalization:
 train_mean, train_std = train_set.data.mean(), train_set.data.std()
 
-num_admm_blocks = 5
+num_admm_blocks = args.numblock
 num_heads = 4
-feature_channels = 6
+feature_channels = 8
 ADMM_info = {
-                 'ADMM_iters':25,
-                 'CG_iters': 3,
+                 'ADMM_iters':args.numlayer,
+                 'CG_iters': args.cgiter,
                  'PGD_iters': 3,
                  'mu_u_init':3,
                  'mu_d1_init':3,
@@ -80,7 +87,7 @@ model_pretrained_path = None
 
 
 
-model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, train_set.signal_channel, feature_channels, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop).to(device)
+model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop).to(device)
 # 'UnrollingForecasting/MainExperiments/models/v2/PEMS04/direct_4b_4h_6f/val_15.pth'
 
 if model_pretrained_path is not None:
@@ -91,7 +98,8 @@ ADMM_iters = ADMM_info['ADMM_iters']
 import torch.optim as optim
 from torch.optim import lr_scheduler
 
-optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+# optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-2)
 scheduler = lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
 
 # 创建文件处理器
@@ -100,10 +108,12 @@ os.makedirs(log_dir, exist_ok=True)
 log_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.log'
 logger = create_logger(log_dir, log_filename)
 
+print('log dir', log_dir)
 logger.info('#################################################')
 total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 logger.info(f'pretrained path: {model_pretrained_path}')
 logger.info(f'learning k hop: {k_hop}')
+logger.info(f'feature channels: {feature_channels}')
 # logger.info(f'graph sigma: {graph_sigma}')
 logger.info(f'batch size: {batch_size}')
 logger.info(f'learning rate: {learning_rate}')
@@ -111,6 +121,7 @@ logger.info(f'Loss function: {loss_name}')
 logger.info(f"Total parameters: {total_params}")
 logger.info(f'device: {device}')
 logger.info('PARAMTER SETTINGS:')
+logger.info(f'ADMM blocks: {num_admm_blocks}')
 logger.info(f'ADMM info: {ADMM_info}')
 logger.info(f'graph info: nodes {train_set.n_nodes}, edges {train_set.n_edges}')
 logger.info('--------BEGIN TRAINING PROCESS------------')
@@ -130,17 +141,17 @@ for epoch in range(num_epochs):
     pred_mape = 0
     nearest_loss = 0
 
-    for y, x in tqdm(train_loader):
+    for y, x, t_list in tqdm(train_loader):
         # print(y.shape, x.shape)
         optimizer.zero_grad()
-        y, x = y.to(device), x.to(device) # y in (B, t, nodes, 1)
+        y, x, t_list = y.to(device), x.to(device), t_list.to(device) # y in (B, t, nodes, 1)
         # normalization
         y = (y - train_mean) / train_std
 
-        output = model(y) # in (B, T, nodes, 1)
+        output = model(y, t_list) # in (B, T, nodes, 1)
 
         output = output * train_std + train_mean
-        output = nn.ReLU()(output)
+        output = nn.ReLU()(output)# [:,:,:,:signal_channels]
 
         rec_mse += ((x[:,:t_in] - output[:,:t_in]) ** 2).mean().item()
         # only unknowns
@@ -149,6 +160,24 @@ for epoch in range(num_epochs):
         loss = loss_fn(output, x)
         loss.backward()       
         optimizer.step()
+
+        # max_grad = 0.0 
+        # max_grad_param_name = None
+        # for name, param in model.named_parameters(): 
+        #     if param.grad is not None: 
+        #         param_grad_norm = param.grad.data.norm(2).item() 
+        #         if param_grad_norm > max_grad: 
+        #             max_grad = param_grad_norm 
+        #             max_grad_param_name = name
+        # print(f'Max gradient parameter name: {max_grad_param_name}, Max gradient value: {max_grad}')
+
+        # total_norm = 0.0
+        # for p in model.parameters(): 
+        #     param_norm = p.grad.data.norm(2) 
+        #     total_norm += param_norm.item() ** 2 
+        # total_norm = total_norm ** (1. / 2) 
+
+        # print(f'Gradient norm: {total_norm}')
         # clamp param
         model.clamp_param(0.18, 0.18)
         # loggers
@@ -202,12 +231,12 @@ for epoch in range(num_epochs):
             pred_mse = 0
             pred_mape = 0
             pred_mae = 0
-            for y, x in tqdm(val_loader):
-                y, x = y.to(device), x.to(device)
+            for y, x, t_list in tqdm(val_loader):
+                y, x, t_list = y.to(device), x.to(device), t_list.to(device)
 
                 y = (y - train_mean) / train_std
 
-                output = model(y)
+                output = model(y, t_list)
 
                 output = output * train_std + train_mean
 

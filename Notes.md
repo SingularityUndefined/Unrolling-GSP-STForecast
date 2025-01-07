@@ -117,3 +117,28 @@ Work plan:
 3. Try to find out why full connection doesn't work.
 
 # Discussion on Dec 19
+
+# Discussion on Jan 3
+Problem:
+(1) First extrapolation always gets NaN value in `self.shrink`
+
+Possible reasons?
+- gradient explosion?
+- current problem is in PEMS07.
+Counter output: Counter({2: 800, 1: 59, 3: 23, 4: 1})
+
+Results:
+
+`python train.py --cuda 1 --dataset PEMS03 --batchsize 8 --hop 4 --tin 12 --tout 12` saved in `Dec-Results/logs/4_hop_concatFE_12_12/PEMS03_MSE_5b25_4h_6f.log`, in tmux `pems03-12-12`
+
+`python train.py --cuda 0 --dataset PEMS07 --batchsize 6` saved in `Dec-Results/logs/6_hop_concatFE_6_6/PEMS07_MSE_5b25_4h_6f.log` and in tmux `pems04-12-12` (Failed)
+
+change into `python train.py --cuda 0 --dataset PEMS07 --batchsize 8 --hop 3`, change Graph Aggregation Layer with SELU
+
+Current modification: changed linear extrapolation with Graph Aggregation Layer
+
+先把层数减少点再说。爆炸原因：Ldr T x出现NaN。为什么？如何debug？
+
+对PEMS08 的 12-12 训练：assert not torch.isnan(agg).any(), 'extrapolation agg has nan value'
+
+Graph aggregation layer:

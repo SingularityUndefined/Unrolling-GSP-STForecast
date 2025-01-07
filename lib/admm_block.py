@@ -48,12 +48,13 @@ class ADMMBlock(nn.Module):
         self.rho_u = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_u_init, requires_grad=True)
         self.rho_d = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_d_init, requires_grad=True)
         # CGD params, emperical initialized
-        self.alpha_x_init = 0.1
-        self.alpha_zu_init = 0.1
-        self.alpha_zd_init = 0.1
-        self.beta_x_init = 0.1
-        self.beta_zu_init = 0.1
-        self.beta_zd_init = 0.1
+        alpha_init = 0.08
+        self.alpha_x_init = alpha_init
+        self.alpha_zu_init = alpha_init
+        self.alpha_zd_init = alpha_init
+        self.beta_x_init = alpha_init
+        self.beta_zu_init = alpha_init
+        self.beta_zd_init = alpha_init
         self.alpha_x = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.alpha_x_init, requires_grad=True)
         self.beta_x = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.beta_x_init, requires_grad=True)
         self.alpha_zu = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.alpha_zu_init, requires_grad=True)
@@ -263,7 +264,7 @@ class ADMMBlock(nn.Module):
         phi = self.apply_op_Ldr(x)
         # print('any NaN in d_ew', torch.isnan(self.d_ew).nonzero(as_tuple=True), self.d_ew.max(), self.d_ew.min())
         # print('any NaN in phi', torch.isnan(phi).any())
-        gamma, gamma_u, gamma_d = torch.ones_like(x) * 0.1, torch.ones_like(x) * 0.1, torch.ones_like(x) * 0.1
+        gamma, gamma_u, gamma_d = torch.ones_like(x) * 0.1, torch.ones_like(x) * 0.05, torch.ones_like(x) * 0.1
         zu, zd = x.clone(), x.clone()
         for i in range(self.ADMM_iters):
             # zu_old, zd_old = zu.clone(), zd.clone()
@@ -281,7 +282,8 @@ class ADMMBlock(nn.Module):
                 # print(torch.isnan(gamma + self.rho[i] * phi).any(), torch.isnan(gamma).any(), )
                 RHS_x = self.apply_op_Ldr_T(gamma + self.rho[i] * phi) / 2 + (self.rho_u[i] * zu + self.rho_d[i] * zd) / 2 - (gamma_u + gamma_d) / 2 + Hty
                 # print(torch.isnan(zu).any(), torch.isnan(zd).any())
-                assert not torch.isnan(RHS_x).any(), f'RHS_x has NaN value in loop {i}, d_ew in {self.d_ew.max().item():.4f}, {self.d_ew.min().item():.4f}, NaN {torch.isnan(self.d_ew).any()}'
+                assert not torch.isnan(gamma + self.rho[i] * phi).any(), f'Ldr T input has NaN in loop {i}, gamma {torch.isnan(gamma).any()}, rho[i] {torch.isnan(self.rho[i]).any()}, phi {torch.isnan(phi).any()}'
+                assert not torch.isnan(RHS_x).any(), f'RHS_x has NaN value in loop {i}, d_ew in {self.d_ew.max().item():.4f}, {self.d_ew.min().item():.4f}, NaN {torch.isnan(self.d_ew).any()}, (rho, rho_u, rho_d)[i] has NaN ({torch.isnan(self.rho[i]).any()}, {torch.isnan(self.rho_u[i]).any()}, {torch.isnan(self.rho_d[i]).any()}), (z_u, z_d) has NaN ({torch.isnan(zu).any()}, {torch.isnan(zd).any()}), (gamma, gamma_u, gamma_d) has NaN ({torch.isnan(gamma).any()}, {torch.isnan(gamma_u).any()}, {torch.isnan(gamma_d).any()})'
                 assert not torch.isinf(RHS_x).any() and not torch.isinf(-RHS_x).any(), f'RHS_x has inf value in loop {i}'
                 # print('RHS_x', torch.isnan(RHS_x).any(), RHS_x.max(), RHS_x.min())
                 # solve x with zu, zd, update x
