@@ -1,16 +1,8 @@
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
 from torch.nn.parameter import Parameter
-import math
 
-import pandas as pd
-import numpy as np
-import torch.nn.functional as F
-import networkx as nx
-from lib.backup_modules import k_hop_neighbors, LR_guess, find_k_nearest_neighbors
-# from statsmodels.tsa.api import VAR
-# from statsmodels.tsa.stattools import adfuller
+
 class Swish(nn.Module): 
     def __init__(self, beta=0.8):
         super().__init__()
@@ -22,7 +14,7 @@ class Swish(nn.Module):
 class GNNExtrapolation(nn.Module):
     '''GNN extrapolation
     '''
-    def __init__(self, n_nodes, t_in, T, nearest_nodes, nearest_dists, n_heads, device, sigma_ratio=500):
+    def __init__(self, n_nodes, t_in, T, nearest_nodes, nearest_dists, n_heads, device, sigma_ratio=400):
         super().__init__()
         self.device = device
         self.n_heads = n_heads
@@ -35,7 +27,10 @@ class GNNExtrapolation(nn.Module):
         # model in markovian
         # self.MLP = nn.Sequential(nn.Linear(t_in * n_heads, hidden_size), nn.ReLU(), nn.Linear(hidden_size, T - t_in), nn.ReLU())
         # self.shrink = nn.Linear(t_in * n_heads, T - t_in) 
-        self.shrink = nn.Sequential(nn.Linear(t_in * n_heads, T - t_in), nn.SELU())
+        # self.head_fc = nn.Sequential(nn.)
+        # TODO: change into Swish
+        self.shrink = nn.Linear(t_in * n_heads, T - t_in)
+        self.swish = Swish()
         self.sigma = self.nearest_dists.max() / sigma_ratio
         
     def forward(self, x):
@@ -43,11 +38,17 @@ class GNNExtrapolation(nn.Module):
         B, t_in, n_nodes, n_channels = x.size()
         # n_nodes = n_nodes - 1
         # aggregation
-        agg, _ = gcn_aggregation(x, self.nearest_nodes, self.nearest_dists, self.n_heads, self.device, self.sigma) # in (B, t_in, N, n_heads, n_channels)
-        assert not torch.isnan(agg).any(), 'extrapolation agg has nan value'
+        try:
+            agg, _ = gcn_aggregation(x, self.nearest_nodes, self.nearest_dists, self.n_heads, self.device, self.sigma) # in (B, t_in, N, n_heads, n_channels)
+        except AssertionError as ae:
+            raise ValueError('Error in GNNExtrapolation Layer - {ae}')
+        assert not torch.isnan(agg).any(), 'extrapolation agg has NaN value'
         agg = agg.permute(0,2,4,1,3).reshape(B, n_nodes, n_channels, -1) # in (B, N, n_channels, t_in * n_heads)
+        assert not torch.isnan(self.shrink.weight).any(), 'GNN extrapolation self.shrink has NaN value'
         y = self.shrink(agg).permute(0,3,1,2)
-        assert not torch.isnan(y).any(), f'weights has NaN :{torch.isnan(self.shrink[0].weight).any()}'
+        y = self.swish(y)
+        # assert not torch.isnan(y).any(), f'weights has NaN :{torch.isnan(self.shrink[0].weight).any()}'
+        # , grad {self.shrink[0].weight.grad.data.norm(2).item()}'
         # print('[x, y]', x.shape, y.shape)
         return torch.cat([x, y], dim=1)
 
@@ -68,32 +69,22 @@ class GALExtrapolation(nn.Module):
         self.nearest_nodes = nearest_nodes
         # self.nearest_dists = nearest_dists
         assert T > t_in, 't_in > T' # SET RELU FALSE
-        self.agg_layer = GraphAggregationLayer(self.n_in, self.n_in, self.nearest_nodes, self.n_heads, 1, self.device, 0, use_relu=False)
-        # model in markovian
-        # self.MLP = nn.Sequential(nn.Linear(t_in * n_heads, hidden_size), nn.ReLU(), nn.Linear(hidden_size, T - t_in), nn.ReLU())
-        # self.shrink = nn.Linear(t_in * n_heads, T - t_in) 
-        self.shrink = nn.Sequential(nn.Linear(t_in * n_heads, T - t_in), nn.SELU())
-        # self.bn = nn.BatchNorm2d()
-        # nn.init.xavier_uniform_(self.shrink[0].weight)
-        # self.sigma = sigma
+        self.agg_layer = GraphAggregationLayer(self.n_in, self.n_in, self.nearest_nodes, self.n_heads, 1, self.device, use_out_fc=False, use_relu=True)
+
+        self.shrink = nn.Sequential(nn.Linear(t_in * n_heads, T - t_in), Swish())
         
     def forward(self, x):
         # signals in (Batch, T, n_nodes, n_channels)?
         B, t_in, n_nodes, n_channels = x.size()
-        # n_nodes = n_nodes - 1
-        # aggregation
-        # agg, _ = gcn_aggregation(x, self.nearest_nodes, self.nearest_dists, self.n_heads, self.device, self.sigma) # in (B, t_in, N, n_heads, n_channels)
-        # agg = multihead_aggregation(x, self.n_heads, self.device)
+        
         try:
             agg = self.agg_layer(x)
         except AssertionError as ae:
-            print(f'Error in GALExtrapolation:agg_layer - {ae}')
-        # print(agg.shape)
-
-        # assert not torch.isnan(agg).any(), 'extrapolation agg has nan value'
+            raise ValueError(f'Error in GALExtrapolation:agg_layer - {ae}')
+        
         agg = agg.permute(0,2,4,1,3).reshape(B, n_nodes, n_channels, -1) # in (B, N, n_channels, t_in * n_heads)
         y = self.shrink(agg).permute(0,3,1,2)
-        assert not torch.isnan(y).any(), f'weights has NaN :{torch.isnan(self.shrink[0].weight).any()}'
+        assert not torch.isnan(y).any(), f'weights has NaN :{torch.isnan(self.shrink[0].weight).any()}, grads {self.shrink[0].weight.grad.data.norm(2).item()}'
         # print('[x, y]', x.shape, y.shape)
         return torch.cat([x, y], dim=1)
 ##################################################################################
@@ -208,7 +199,7 @@ class GraphAggregationLayer(nn.Module):
         x_nn = pad_x[:,:, self.nearest_nodes.view(-1)].reshape(B, T, self.n_nodes, -1, head_in, n_in)
         # print(x_nn.shape)
         x_agg = self.agg_fc(x_nn.transpose(-1, -3)).squeeze(-1)# .transpose(-1, -2)
-        assert not torch.isnan(x_agg).any(), f'x_agg_1 has NaN value, agg_fc has NaN value {torch.isnan(self.agg_fc.weight).any()}'
+        assert not torch.isnan(x_agg).any(), f'x_agg has NaN value, agg_fc has NaN value {torch.isnan(self.agg_fc.weight).any()}' # , grad norm {self.agg_fc.weight.grad.data.norm(2).item()}'
         
         if self.use_multihead_fc:
             assert not torch.isinf(self.multihead_fc.weight).any(), 'multihead_fc.weight has INF value'
@@ -270,9 +261,11 @@ class GraphConvolutionLayer(nn.Module):
         out = self.fc(agg)
         return self.relu(out)
 
+
+
 class FeatureExtractor(nn.Module):
     # def __init__(self, n_in, n_out, n_nodes, n_heads, nearest_nodes, nearest_dists, device, n_layers=3, sigma=6, alpha=0.2, use_dist_conv=False):
-    def __init__(self, n_in, n_out, n_heads, nearest_nodes, device, n_layers=3, alpha=0.2, use_graph_agg=True):
+    def __init__(self, n_in, n_out, n_heads, nearest_nodes, device, n_layers=3, alpha=0.2, use_graph_agg=True, n_nodes=None, sigma_ratio=None, nearest_dist=None):
         super().__init__()
         self.n_in = n_in
         self.n_out = n_out
@@ -288,31 +281,40 @@ class FeatureExtractor(nn.Module):
             if self.n_layers > 1:
                 self.GNN = nn.Sequential(*[GraphAggregationLayer(n_out, n_out, self.nearest_nodes, n_heads, n_heads, self.device, use_out_fc=False, use_multihead_fc=False, alpha=alpha) for i in range(n_layers - 1)])
         else:
-            self.nn = nn.Sequential(nn.Linear(1, n_heads), nn.SELU()) # n_nodes, n_in -> n_nodes, n_head, n_in
+            # self.nn = nn.Sequential(nn.Linear(1, n_heads), nn.SELU()) # n_nodes, n_in -> n_nodes, n_head, n_in
+            assert n_nodes is not None, 'n_nodes should not be None'
+            assert sigma_ratio is not None, 'sigma_ratio should not be None'
+            assert nearest_dist is not None, 'nearest_dist should not be None'
+            sigma = nearest_dist.max() / sigma_ratio
+            # print('sigma', sigma)
 
-        # self.input_layer = GraphConvolutionLayer(n_in, n_out, n_nodes, n_heads, self.nearest_nodes, self.nearest_dists, device, sigma, alpha, self.use_dist_conv)
-        # GNN layers
-        # if self.n_layers > 1:
-        #     self.GNN = nn.Sequential(*[GraphConvolutionLayer(n_out, n_out, n_nodes, n_heads, self.nearest_nodes, self.nearest_dists, device, sigma, alpha, False)
-        #         for i in range(n_layers - 1)
-        #     ])
+            self.input_layer = GraphConvolutionLayer(n_in, n_out, n_nodes, n_heads, self.nearest_nodes, nearest_dist, device, sigma, alpha, True)
+            # GNN layers
+            if self.n_layers > 1:
+                self.GNN = nn.Sequential(*[GraphConvolutionLayer(n_out, n_out, n_nodes, n_heads, self.nearest_nodes, nearest_dist, device, sigma, alpha, False)
+                    for i in range(n_layers - 1)
+                ])
 
     def forward(self, x):
-        if self.use_graph_agg:
+        # if self.use_graph_agg:
             # print(x.shape)\
-            try:
-                out = self.input_layer(x)
-            except AssertionError as ae:
-                raise AssertionError(f'input layer - {ae}')
-            assert not torch.isnan(out).any(), 'GCN Feature Extractor 1st layer NaN' 
-        # print('GCN 1:', out.size())
-            if self.n_layers == 1:
-                return out
-            else:
-                return self.GNN(out)
+        try:
+            out = self.input_layer(x)
+        except AssertionError as ae:
+            raise ValueError(f'Error in input layer - {ae}')
+        assert not torch.isnan(out).any(), 'GCN Feature Extractor 1st layer NaN' 
+    # print('GCN 1:', out.size())
+        if self.n_layers == 1:
+            return out
         else:
-            return self.nn(x.unsqueeze(-1)).transpose(-1, -2) # in (B, T, N, n_nodes, n_in)
-            # use multihead_agg
+            try:
+                y = self.GNN(out)
+            except AssertionError as ae:
+                raise ValueError('Error in Following layer - {ae}')
+            return y
+        # else:
+        #     return self.nn(x.unsqueeze(-1)).transpose(-1, -2) # in (B, T, N, n_nodes, n_in)
+        #     # use multihead_agg
 
 
 # return k-hop edges 

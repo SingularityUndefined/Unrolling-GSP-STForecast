@@ -1,0 +1,8 @@
+PEMS03: Counter({4: 142, 2: 121, 3: 59, 1: 20, 5: 9, 6: 7})
+PEMS04: Counter({2: 194, 1: 50, 3: 29, 4: 20, 5: 10, 6: 3, 7: 1})
+PEMS07: Counter({2: 800, 1: 59, 3: 23, 4: 1})
+PEMS08: Counter({2: 75, 4: 24, 5: 23, 1: 11, 3: 11, 6: 10, 7: 7, 8: 5, 9: 4})
+
+
+python train.py --dataset PEMS08 --cuda 0 --batchsize 6 --hop 4 --lr 0.0005 --tin 12 --tout 12 --numblock 5 成功，在extrapolation用GNN的时候，取sigma ratio=450
+

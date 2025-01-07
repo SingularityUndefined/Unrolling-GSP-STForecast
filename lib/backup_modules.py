@@ -11,6 +11,8 @@ import networkx as nx
 import heapq
 import matplotlib.pyplot as plt
 
+# class customError
+
 class SimpleLinearExtrapolation(nn.Module):
     def __init__(self, n_nodes, t_in, T):
         super().__init__()

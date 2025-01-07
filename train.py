@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 from lib.unrolling_model import UnrollingModel
+from lib.graph_learning_module import Swish
 from lib.backup_modules import visualise_graph
 from tqdm import tqdm
 import os
@@ -68,11 +69,12 @@ signal_channels = train_set.signal_channel
 
 # visualise_graph(train_set.graph_info['u_edges'], train_set.graph_info['u_dist'], dataset_name, dataset_name + '.png')
 # normalization:
-train_mean, train_std = train_set.data.mean(), train_set.data.std()
+# train_mean, train_std = train_set.data.mean(), train_set.data.std()
+train_min, train_max = train_set.data.min(), train_set.data.max()
 
 num_admm_blocks = args.numblock
 num_heads = 4
-feature_channels = 8
+feature_channels = 6
 ADMM_info = {
                  'ADMM_iters':args.numlayer,
                  'CG_iters': args.cgiter,
@@ -141,17 +143,24 @@ for epoch in range(num_epochs):
     pred_mape = 0
     nearest_loss = 0
 
+    iteration_count = 0
+
     for y, x, t_list in tqdm(train_loader):
         # print(y.shape, x.shape)
         optimizer.zero_grad()
         y, x, t_list = y.to(device), x.to(device), t_list.to(device) # y in (B, t, nodes, 1)
         # normalization
-        y = (y - train_mean) / train_std
+        # y = (y - train_mean) / train_std
+        y = (y - train_min) / (train_max - train_min)
+        try:
+            output = model(y, t_list) # in (B, T, nodes, 1)
+        except ValueError as ve:
+            print(f'Error in [Epoch {epoch}, Iter {iteration_count}] - {ve}')
+        # except AssertionError as ae:
+           #  print(f'Error in [Epoch {epoch}, Iter {iteration_count}] - {ae}')
 
-        output = model(y, t_list) # in (B, T, nodes, 1)
-
-        output = output * train_std + train_mean
-        output = nn.ReLU()(output)# [:,:,:,:signal_channels]
+        output = output * (train_max - train_min) + train_min # output * train_std + train_mean
+        # output = nn.ReLU()(output)# [:,:,:,:signal_channels]
 
         rec_mse += ((x[:,:t_in] - output[:,:t_in]) ** 2).mean().item()
         # only unknowns
@@ -160,6 +169,17 @@ for epoch in range(num_epochs):
         loss = loss_fn(output, x)
         loss.backward()       
         optimizer.step()
+        iteration_count += 1
+
+        if iteration_count % 10 == 9:
+            logger.info(f'Epoch {epoch}, Iter {iteration_count}')
+            for name, param in model.named_parameters():
+                # if not model.use_old_extrapolation:
+                if 'agg_fc.weight' in name:
+                    logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
+                if model.use_old_extrapolation:
+                    if 'linear_extrapolation' in name:
+                        logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
 
         # max_grad = 0.0 
         # max_grad_param_name = None
@@ -234,11 +254,13 @@ for epoch in range(num_epochs):
             for y, x, t_list in tqdm(val_loader):
                 y, x, t_list = y.to(device), x.to(device), t_list.to(device)
 
-                y = (y - train_mean) / train_std
+                # y = (y - train_mean) / train_std
+                y = (y - train_min) / (train_max - train_min)
 
                 output = model(y, t_list)
 
-                output = output * train_std + train_mean
+                output = output * (train_max - train_min) + train_min
+                # output = output * train_std + train_mean
 
                 rec_mse += ((x[:,:t_in] - output[:,:t_in]) ** 2).mean().item()
                 if masked_flag:

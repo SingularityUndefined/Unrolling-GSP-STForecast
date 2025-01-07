@@ -38,7 +38,7 @@ class UnrollingModel(nn.Module):
                      'diw_dim': 4
                  },
                  # TODO: change here
-                 use_old_extrapolation=False
+                 use_old_extrapolation=True
                  ):
         super().__init__()
         self.num_blocks = num_blocks
@@ -54,7 +54,7 @@ class UnrollingModel(nn.Module):
 
         self.use_old_extrapolation = use_old_extrapolation
         if self.use_old_extrapolation:
-            self.linear_extrapolation = GNNExtrapolation(graph_info['n_nodes'], t_in, T, self.nearsest_nodes, self.nearest_dists, n_heads, self.device, sigma_ratio=600)
+            self.linear_extrapolation = GNNExtrapolation(graph_info['n_nodes'], t_in, T, self.nearsest_nodes, self.nearest_dists, n_heads, self.device, sigma_ratio=450)
         else:
             self.linear_extrapolation = GALExtrapolation(graph_info['n_nodes'], t_in, T, self.nearsest_nodes, signal_channels, n_heads, device)
         
@@ -87,7 +87,10 @@ class UnrollingModel(nn.Module):
                         # sigma=graph_sigma,
                         alpha=GNN_alpha,
                         # use_dist_conv=use_dist_conv,
-                        use_graph_agg=True
+                        use_graph_agg=True,
+                        n_nodes=graph_info['n_nodes'],
+                        sigma_ratio=450,
+                        nearest_dist=self.nearest_dists
                     ),
                     'ADMM_block': ADMMBlock(
                         T=T,
@@ -213,7 +216,6 @@ class UnrollingModel(nn.Module):
         # pad = torch.zeros((B, t, 1, signal_channels), device=self.device)  
         # y = torch.cat((y, pad), dim=2)
         # print('pad y', y.shape, y[:,:,-1].sum())
-
         output = self.linear_extrapolation(y)
         assert not torch.isnan(output).any(), 'linear extrapolation has nan'
         # print('pad output', output.size(), output[:,:,-1].sum())
@@ -231,10 +233,13 @@ class UnrollingModel(nn.Module):
             # learn features
             try:
                 features = feature_extractor(output_emb) # in (batch, T, n_nodes, n_heads, n_out)
-            except AssertionError as ae:
-                print(f'Assertation error in Feature extractor in block {i}: {ae}')
+            except ValueError as ae:
+                raise ValueError(f'Error in Feature extractor in Block {i}: {ae}')
             # print('features', features.size())
-            u_ew, d_ew = graph_learn(features)
+            try:
+                u_ew, d_ew = graph_learn(features)
+            except AssertionError as ae:
+                raise ValueError(f'Error in Graph Learning Module in Block {i}: {ae}')
             # print('max in weights', get_max_in_dict(u_ew), get_max_in_dict(d_ew))
             # print('u_ew', u_ew[0].shape)
             # print('d_ew', d_ew[0].shape)
@@ -244,7 +249,7 @@ class UnrollingModel(nn.Module):
                 output_new = admm_block(output, t) # in (batch, T, n_nodes, signal_channels)
             # skip connections
             except AssertionError as ae:
-                print(f'Assertation Error in ADMM block in block {i} - {ae}')
+                raise ValueError(f'Assertation Error in ADMM block in block {i} - {ae}')
             assert not torch.isnan(output_new).any(), f'output_new has NaN value in block {i}'
             p = self.skip_connection_weights[i]
             assert not torch.isnan(self.skip_connection_weights).any(), f'skip connection has NaN Values in block {i}'
