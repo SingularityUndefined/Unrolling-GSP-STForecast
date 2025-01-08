@@ -35,27 +35,31 @@ def create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, nu
 
     return train_set, val_set, test_set, train_loader, val_loader, test_loader
 
-def create_logger(log_dir, log_filename):
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
+import logging
 
-    # 创建文件处理器
-    os.makedirs(log_dir, exist_ok=True)
-
-    file_handler = logging.FileHandler(os.path.join(log_dir, log_filename))
-    file_handler.setLevel(logging.INFO)
-    file_formatter = logging.Formatter('%(asctime)s - %(message)s')
-    file_handler.setFormatter(file_formatter)
-
-    # 创建控制台处理器
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(file_formatter)
-
-    # 添加处理器到logger
+def setup_logger(name, logfile, level=logging.INFO, to_console=False):
+    # 创建logger
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    
+    # 创建formatter
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    # 创建文件handler并设置日志级别和格式
+    file_handler = logging.FileHandler(logfile)
+    file_handler.setLevel(level)
+    file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
+    
+    # 根据参数决定是否创建控制台handler
+    if to_console:
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(level)
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+    
     return logger
+
 
 # def 
 class WeightedMSELoss(nn.Module):

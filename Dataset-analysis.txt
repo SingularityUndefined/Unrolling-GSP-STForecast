@@ -6,3 +6,18 @@ PEMS08: Counter({2: 75, 4: 24, 5: 23, 1: 11, 3: 11, 6: 10, 7: 7, 8: 5, 9: 4})
 
 python train.py --dataset PEMS08 --cuda 0 --batchsize 6 --hop 4 --lr 0.0005 --tin 12 --tout 12 --numblock 5 成功，在extrapolation用GNN的时候，取sigma ratio=450
 
+结果好，但是找不到了
+2025-01-07 13:10:20,932 - #################################################
+2025-01-07 13:10:20,933 - pretrained path: None
+2025-01-07 13:10:20,933 - learning k hop: 4
+2025-01-07 13:10:20,933 - feature channels: 6
+2025-01-07 13:10:20,933 - batch size: 6
+2025-01-07 13:10:20,933 - learning rate: 0.0005
+2025-01-07 13:10:20,934 - Loss function: MSE
+2025-01-07 13:10:20,934 - Total parameters: 12913
+2025-01-07 13:10:20,934 - device: cuda:0
+2025-01-07 13:10:20,934 - PARAMTER SETTINGS:
+2025-01-07 13:10:20,934 - ADMM blocks: 5
+2025-01-07 13:10:20,934 - ADMM info: {'ADMM_iters': 25, 'CG_iters': 3, 'PGD_iters': 3, 'mu_u_init': 3, 'mu_d1_init': 3, 'mu_d2_init': 3}
+2025-01-07 13:10:20,934 - graph info: nodes 170, edges 590
+Training: Epoch [6/30], Loss:230.9740, rec_RMSE: 4.9321, RMSE_next:5.9978, RMSE:20.9194, MAE:9.2530, MAPE(%):3595016.1718

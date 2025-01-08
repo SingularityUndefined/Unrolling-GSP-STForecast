@@ -108,7 +108,14 @@ scheduler = lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
 log_dir = f'/mnt/qij/Dec-Results/logs/{experiment_name}'
 os.makedirs(log_dir, exist_ok=True)
 log_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.log'
-logger = create_logger(log_dir, log_filename)
+# logger = create_logger(log_dir, log_filename)
+
+grad_logger_dir = f'/mnt/qij/Dec-Results/grad_logs/{experiment_name}'
+os.makedirs(log_dir, exist_ok=True)
+# grad_logger = create_logger(grad_logger_dir, log_filename, add_console_handler=False)
+
+logger = setup_logger('logger1', os.path.join(log_dir, log_filename), logging.DEBUG, to_console=True)
+grad_logger = setup_logger('logger2', os.path.join(grad_logger_dir, log_filename), logging.INFO, to_console=False)
 
 print('log dir', log_dir)
 logger.info('#################################################')
@@ -127,6 +134,8 @@ logger.info(f'ADMM blocks: {num_admm_blocks}')
 logger.info(f'ADMM info: {ADMM_info}')
 logger.info(f'graph info: nodes {train_set.n_nodes}, edges {train_set.n_edges}')
 logger.info('--------BEGIN TRAINING PROCESS------------')
+
+grad_logger.info('------BEGIN TRAINING PROCESS-------')
 
 model_dir = os.path.join(f'/mnt/qij/Dec-Results/models/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f')
 os.makedirs(model_dir, exist_ok=True)
@@ -171,15 +180,18 @@ for epoch in range(num_epochs):
         optimizer.step()
         iteration_count += 1
 
-        if iteration_count % 10 == 9:
-            logger.info(f'Epoch {epoch}, Iter {iteration_count}')
-            for name, param in model.named_parameters():
-                # if not model.use_old_extrapolation:
-                if 'agg_fc.weight' in name:
-                    logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
-                if model.use_old_extrapolation:
-                    if 'linear_extrapolation' in name:
-                        logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
+        grad_logger.info(f'[Epoch {epoch}, Iter {iteration_count}]')
+        for name, param in model.named_parameters():
+            # if not model.use_old_extrapolation:
+            if 'agg_fc.weight' in name:
+                grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
+                if iteration_count % 30 == 9:
+                    print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
+            if model.use_old_extrapolation:
+                if 'linear_extrapolation' in name:
+                    grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
+                    if iteration_count % 30 == 9:
+                        print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
 
         # max_grad = 0.0 
         # max_grad_param_name = None
