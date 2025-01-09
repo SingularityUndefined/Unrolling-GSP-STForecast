@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 from lib.unrolling_model import UnrollingModel
-from lib.graph_learning_module import Swish
+# from lib.graph_learning_module import Swish
 from lib.backup_modules import visualise_graph
 from tqdm import tqdm
 import os
@@ -22,6 +22,10 @@ parser.add_argument('--numlayer', help='number of admm layers', default=25, type
 parser.add_argument('--cgiter', help='CGD iterations', default=3, type=int)
 parser.add_argument('--seed', help='random seed', default=3407, type=int)
 parser.add_argument('--lr', help='learning rate', default=0.001, type=float)
+parser.add_argument('--debug', help='if debug, save model every iteration', default=False, type=bool)
+parser.add_argument('--optim', help='optimizer', default='adam', type=str)
+parser.add_argument('--mode', help='normalization mode', type=str)
+
 args = parser.parse_args()
 
 seed_everything(args.seed)
@@ -67,10 +71,13 @@ train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dat
 # print(len(train_loader), len(val_loader), len(test_loader))
 signal_channels = train_set.signal_channel
 
+print('signal channels', signal_channels)
+
 # visualise_graph(train_set.graph_info['u_edges'], train_set.graph_info['u_dist'], dataset_name, dataset_name + '.png')
 # normalization:
 # train_mean, train_std = train_set.data.mean(), train_set.data.std()
-train_min, train_max = train_set.data.min(), train_set.data.max()
+# train_min, train_max = train_set.data.min(), train_set.data.max()
+data_normalization = Normalization(train_set, args.mode)
 
 num_admm_blocks = args.numblock
 num_heads = 4
@@ -100,9 +107,11 @@ ADMM_iters = ADMM_info['ADMM_iters']
 import torch.optim as optim
 from torch.optim import lr_scheduler
 
-# optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-2)
-scheduler = lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+if args.optim == 'adam':
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+elif args.optim == 'adamw':
+    optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-2)
+scheduler = lr_scheduler.StepLR(optimizer, step_size=8, gamma=0.2) # TODO: step size
 
 # 创建文件处理器
 log_dir = f'/mnt/qij/Dec-Results/logs/{experiment_name}'
@@ -111,11 +120,13 @@ log_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_
 # logger = create_logger(log_dir, log_filename)
 
 grad_logger_dir = f'/mnt/qij/Dec-Results/grad_logs/{experiment_name}'
-os.makedirs(log_dir, exist_ok=True)
+os.makedirs(grad_logger_dir, exist_ok=True)
 # grad_logger = create_logger(grad_logger_dir, log_filename, add_console_handler=False)
 
 logger = setup_logger('logger1', os.path.join(log_dir, log_filename), logging.DEBUG, to_console=True)
 grad_logger = setup_logger('logger2', os.path.join(grad_logger_dir, log_filename), logging.INFO, to_console=False)
+
+debug_model_path = os.path.join(f'/mnt/qij/Dec-Results/debug_models/{experiment_name}', f'{dataset_name}/{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
 
 print('log dir', log_dir)
 logger.info('#################################################')
@@ -137,7 +148,7 @@ logger.info('--------BEGIN TRAINING PROCESS------------')
 
 grad_logger.info('------BEGIN TRAINING PROCESS-------')
 
-model_dir = os.path.join(f'/mnt/qij/Dec-Results/models/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f')
+model_dir = os.path.join(f'/mnt/qij/Dec-Results/models/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
 os.makedirs(model_dir, exist_ok=True)
 masked_flag = False
 # train models
@@ -160,16 +171,18 @@ for epoch in range(num_epochs):
         y, x, t_list = y.to(device), x.to(device), t_list.to(device) # y in (B, t, nodes, 1)
         # normalization
         # y = (y - train_mean) / train_std
-        y = (y - train_min) / (train_max - train_min)
+        y = data_normalization.normalize_data(y)
+        # y = (y - train_min) / (train_max - train_min)
         try:
             output = model(y, t_list) # in (B, T, nodes, 1)
         except ValueError as ve:
             print(f'Error in [Epoch {epoch}, Iter {iteration_count}] - {ve}')
         # except AssertionError as ae:
            #  print(f'Error in [Epoch {epoch}, Iter {iteration_count}] - {ae}')
-
-        output = output * (train_max - train_min) + train_min # output * train_std + train_mean
-        # output = nn.ReLU()(output)# [:,:,:,:signal_channels]
+        output = data_normalization.recover_data(output)
+        if args.mode == 'normalize':
+        # output = output * (train_max - train_min) + train_min # output * train_std + train_mean
+            output = nn.ReLU()(output)# [:,:,:,:signal_channels]
 
         rec_mse += ((x[:,:t_in] - output[:,:t_in]) ** 2).mean().item()
         # only unknowns
@@ -192,6 +205,9 @@ for epoch in range(num_epochs):
                     grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
                     if iteration_count % 30 == 9:
                         print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
+        # save model for debug
+        if args.debug:
+            torch.save(model.state_dict(), debug_model_path)
 
         # max_grad = 0.0 
         # max_grad_param_name = None
@@ -267,11 +283,13 @@ for epoch in range(num_epochs):
                 y, x, t_list = y.to(device), x.to(device), t_list.to(device)
 
                 # y = (y - train_mean) / train_std
-                y = (y - train_min) / (train_max - train_min)
-
+                # y = (y - train_min) / (train_max - train_min)
+                y = data_normalization.normalize_data(y)
                 output = model(y, t_list)
-
-                output = output * (train_max - train_min) + train_min
+                output = data_normalization.recover_data(output)
+                if args.mode == 'normalize':
+                    output = nn.ReLU()(output)
+                # output = output * (train_max - train_min) + train_min
                 # output = output * train_std + train_mean
 
                 rec_mse += ((x[:,:t_in] - output[:,:t_in]) ** 2).mean().item()

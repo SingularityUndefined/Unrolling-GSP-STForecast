@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from lib.graph_learning_module import GNNExtrapolation, FeatureExtractor, GraphLearningModule, GNNExtrapolation, GALExtrapolation
 from lib.admm_block import ADMMBlock
-from lib.backup_modules import layer_norm_on_data, layer_recovery_on_data, find_k_nearest_neighbors, SpatialTemporalEmbedding
+from lib.backup_modules import layer_norm_on_data, layer_recovery_on_data, find_k_nearest_neighbors, SpatialTemporalEmbedding, LR_guess
 from torch.nn.parameter import Parameter
 
 class UnrollingModel(nn.Module):
@@ -38,7 +38,10 @@ class UnrollingModel(nn.Module):
                      'diw_dim': 4
                  },
                  # TODO: change here
-                 use_old_extrapolation=True
+                 use_extrapolation=True,
+                 use_old_extrapolation=False,
+                 extrapolation_agg_layers=2,
+                 sigma_ratio=450
                  ):
         super().__init__()
         self.num_blocks = num_blocks
@@ -51,16 +54,17 @@ class UnrollingModel(nn.Module):
         # define a graph connection pattern
         self.kNN = None
         self.nearsest_nodes, self.nearest_dists = find_k_nearest_neighbors(graph_info['n_nodes'], graph_info['u_edges'], graph_info['u_dist'], k_hop, device=self.device)
-
-        self.use_old_extrapolation = use_old_extrapolation
-        if self.use_old_extrapolation:
-            self.linear_extrapolation = GNNExtrapolation(graph_info['n_nodes'], t_in, T, self.nearsest_nodes, self.nearest_dists, n_heads, self.device, sigma_ratio=450)
-        else:
-            self.linear_extrapolation = GALExtrapolation(graph_info['n_nodes'], t_in, T, self.nearsest_nodes, signal_channels, n_heads, device)
+        self.use_extrapolation = use_extrapolation
+        if self.use_extrapolation:
+            self.use_old_extrapolation = use_old_extrapolation
+            if self.use_old_extrapolation:
+                self.linear_extrapolation = GNNExtrapolation(graph_info['n_nodes'], t_in, T, self.nearsest_nodes, self.nearest_dists, n_heads, self.device, sigma_ratio=sigma_ratio)
+            else:
+                self.linear_extrapolation = GALExtrapolation(graph_info['n_nodes'], t_in, T, self.nearsest_nodes, signal_channels, n_heads, device, n_layers=extrapolation_agg_layers)
         
         self.use_st_emb = use_st_emb
         if self.use_st_emb:
-            self.st_emb = SpatialTemporalEmbedding(graph_info['n_nodes'], graph_info['u_edges'], graph_info['u_dist'], 600, self.device, st_emb_info['spatial_dim'], st_emb_info['t_dim'], st_emb_info['tid_dim'], st_emb_info['diw_dim'])
+            self.st_emb = SpatialTemporalEmbedding(graph_info['n_nodes'], graph_info['u_edges'], graph_info['u_dist'], sigma_ratio, self.device, st_emb_info['spatial_dim'], st_emb_info['t_dim'], st_emb_info['tid_dim'], st_emb_info['diw_dim'])
             signal_emb_channels = signal_channels + st_emb_info['spatial_dim'] + st_emb_info['t_dim'] + st_emb_info['tid_dim'] + st_emb_info['diw_dim']
         else:
             signal_emb_channels = signal_channels
@@ -216,7 +220,11 @@ class UnrollingModel(nn.Module):
         # pad = torch.zeros((B, t, 1, signal_channels), device=self.device)  
         # y = torch.cat((y, pad), dim=2)
         # print('pad y', y.shape, y[:,:,-1].sum())
-        output = self.linear_extrapolation(y)
+        if self.use_extrapolation:
+            output = self.linear_extrapolation(y)
+        else:
+            output = LR_guess(y, self.T, self.device)
+
         assert not torch.isnan(output).any(), 'linear extrapolation has nan'
         # print('pad output', output.size(), output[:,:,-1].sum())
         if self.use_st_emb:

@@ -76,3 +76,30 @@ class WeightedMSELoss(nn.Module):
         rec_loss = nn.MSELoss()(inputs[:,:self.t], target[:,:self.t])# ((inputs[:,:self.t] - target[:,:self.t]) ** 2).mean()
         pred_loss = nn.MSELoss()(inputs[:,self.t:], target[:,self.t:])# ((inputs[:,self.t:] - target[:,self.t:]) ** 2).mean()
         return rec_loss * self.weights + pred_loss
+
+
+class Normalization():
+    def __init__(self, dataset:TrafficDataset, mode:str):
+        assert mode in ['normalize', 'standardize'], 'mode should be in [normalize, standardize]'
+        self.mode = mode
+        if mode == 'normalize':
+            self.mean = dataset.data.mean()
+            self.std = dataset.data.std()
+        elif mode == 'standardize':
+            self.min = dataset.data.min()
+            self.max = dataset.data.max()
+
+    def normalize_data(self, x):
+        '''
+        *args = (mean, std) or *args = (min, max)
+        '''
+        if self.mode == 'normalize':
+            return (x - self.mean) / self.std
+        elif self.mode == 'standardize':
+            return (x - self.min) / (self.max - self.min)
+        
+    def recover_data(self, x):
+        if self.mode == 'normalize':
+            return x * self.std + self.mean
+        elif self.mode == 'standardize':
+            return x * (self.max - self.min) + self.min

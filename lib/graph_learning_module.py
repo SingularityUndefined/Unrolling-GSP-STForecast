@@ -3,12 +3,18 @@ import torch.nn as nn
 from torch.nn.parameter import Parameter
 
 
-class Swish(nn.Module): 
-    def __init__(self, beta=0.8):
+class CustomActivationFunction(nn.Module): 
+    def __init__(self, beta=0.8, mode='selu'):
         super().__init__()
         self.beta = beta
+        self.mode = mode
     def forward(self, x): 
-        return x * torch.sigmoid(self.beta * x)
+        if self.mode == 'swish':
+            return x * torch.sigmoid(self.beta * x)
+        elif self.mode == 'selu':
+            return nn.SELU()(x)
+        elif self.mode == 'relu':
+            return nn.ReLU()(x)
 
 # node embedding
 class GNNExtrapolation(nn.Module):
@@ -28,9 +34,8 @@ class GNNExtrapolation(nn.Module):
         # self.MLP = nn.Sequential(nn.Linear(t_in * n_heads, hidden_size), nn.ReLU(), nn.Linear(hidden_size, T - t_in), nn.ReLU())
         # self.shrink = nn.Linear(t_in * n_heads, T - t_in) 
         # self.head_fc = nn.Sequential(nn.)
-        # TODO: change into Swish
         self.shrink = nn.Linear(t_in * n_heads, T - t_in)
-        self.swish = Swish()
+        self.swish = CustomActivationFunction()
         self.sigma = self.nearest_dists.max() / sigma_ratio
         
     def forward(self, x):
@@ -57,7 +62,7 @@ class GALExtrapolation(nn.Module):
     '''
     def __init__(self, n_nodes, t_in, T, nearest_nodes, n_in,
                  # nearest_dists,
-                   n_heads, device):
+                   n_heads, device, n_layers=2):
         super().__init__()
         self.device = device
         self.n_heads = n_heads
@@ -70,8 +75,11 @@ class GALExtrapolation(nn.Module):
         # self.nearest_dists = nearest_dists
         assert T > t_in, 't_in > T' # SET RELU FALSE
         self.agg_layer = GraphAggregationLayer(self.n_in, self.n_in, self.nearest_nodes, self.n_heads, 1, self.device, use_out_fc=False, use_relu=True)
+        self.n_layers = n_layers
+        if self.n_layers > 1:
+            self.GNN = nn.Sequential(*[GraphAggregationLayer(self.n_in, self.n_in, self.nearest_nodes, self.n_heads, self.n_heads, self.device, use_out_fc=False, use_multihead_fc=False, use_relu=True) for i in range(self.n_layers - 1)])
 
-        self.shrink = nn.Sequential(nn.Linear(t_in * n_heads, T - t_in), Swish())
+        self.shrink = nn.Sequential(nn.Linear(t_in * n_heads, T - t_in), CustomActivationFunction())
         
     def forward(self, x):
         # signals in (Batch, T, n_nodes, n_channels)?
@@ -79,6 +87,8 @@ class GALExtrapolation(nn.Module):
         
         try:
             agg = self.agg_layer(x)
+            if self.n_layers > 1:
+                agg = self.GNN(agg)
         except AssertionError as ae:
             raise ValueError(f'Error in GALExtrapolation:agg_layer - {ae}')
         
@@ -145,7 +155,7 @@ def gcn_aggregation(x:torch.Tensor, nearest_nodes:torch.Tensor, nearest_dist:tor
     return agg, dist_agg # in (B, T, N, n_heads, n_in), (N, n_heads)
 
 class GraphAggregationLayer(nn.Module):
-    def __init__(self, n_in, n_out, nearest_nodes, n_heads, in_heads, device, use_out_fc=True, use_multihead_fc=True, alpha=0.2, use_relu=True):
+    def __init__(self, n_in, n_out, nearest_nodes, n_heads, in_heads, device, use_out_fc=True, use_multihead_fc=True, alpha=0.2, use_relu=True, use_single_fc=True):
         super().__init__()
         self.nearest_nodes = nearest_nodes
         self.k = nearest_nodes.size(1) - 1
@@ -153,27 +163,26 @@ class GraphAggregationLayer(nn.Module):
         self.n_heads = n_heads
         self.device = device
         self.in_heads = in_heads
-        # self.agg_mat = Parameter(torch.ones((n_heads, self.k + 1, in_heads), device=self.device) / torch.sqrt(n_heads * (self.k + 1) * in_heads), requires_grad=True) # TODO:  can be reduced 
-        # self.agg_fc = nn.Linear(self.k + 1, 1)
-        # if in_heads == 1:
-            # self.multi_fc = nn.Linear(1, n_heads)
-        # self.bias = Parameter(torch.zeros(n_heads, device=self.device), requires_grad=True)
-        self.agg_fc = nn.Linear(self.k + 1, 1)
-        
-        self.use_multihead_fc = use_multihead_fc
-        if self.use_multihead_fc:
-            self.swish1 = Swish()
-            self.multihead_fc = nn.Linear(self.in_heads, self.n_heads)
+        self.use_single_fc = use_single_fc
+        if self.use_single_fc:
+            self.agg_fc = nn.Linear(self.in_heads * (self.k + 1), self.n_heads)
+        else:
+            self.agg_fc = nn.Linear(self.k + 1, 1)
+            
+            self.use_multihead_fc = use_multihead_fc
+            if self.use_multihead_fc:
+                self.swish1 = CustomActivationFunction()
+                self.multihead_fc = nn.Linear(self.in_heads, self.n_heads)
         # self.agg_fc = nn.Linear(self.in_heads * (self.k + 1), self.n_heads)
         self.use_out_fc = use_out_fc
         if self.use_out_fc:
-            self.swish2 = Swish()
+            self.swish2 = CustomActivationFunction()
             self.out_fc = nn.Linear(n_in, n_out)
         # nn.init.xavier_uniform_(self.agg_fc.weight)
         # nn.init.xavier_uniform_(self.out_fc.weight)
         self.alpha = alpha
         self.use_relu = use_relu
-        self.relu = Swish() # nn.SELU()
+        self.relu = CustomActivationFunction() # nn.SELU()
         # self.leaky_relu = nn.LeakyReLU(0.1)
         
     def forward(self, x):
@@ -190,25 +199,28 @@ class GraphAggregationLayer(nn.Module):
             pad_x = pad_x.unsqueeze(-2)
             
         head_in = pad_x.size(-2)
-        # x_nn = pad_x[:,:, self.nearest_nodes.view(-1)].reshape(B, T, self.n_nodes, -1, n_in) # in (B, T, N, k * head_in, n_in) # .reshape(B, T, self.n_nodes, -1, head_in, n_in) # in (B, T, N, k, head_in, n_in)
-        # x_agg = self.agg_fc(x_nn.transpose(-1, -2)).transpose(-1, -2) #TODO: reduce more parameters
-        # assert not torch.isnan(x_agg).any(), f'x_agg has NaN value, agg_fc has NaN value {torch.isnan(self.agg_fc.weight).any()}'
+        
         assert not torch.isinf(self.agg_fc.weight).any(), f'agg_fc.weight has INF value'
-        # assert not torch.isinf(self.agg_fc.weight).any(), f'agg_fc_1 has inf value'
+        if self.use_single_fc:
+            x_nn = pad_x[:,:, self.nearest_nodes.view(-1)].reshape(B, T, self.n_nodes, -1, n_in) # in (B, T, N, k * head_in, n_in) # .reshape(B, T, self.n_nodes, -1, head_in, n_in) # in (B, T, N, k, head_in, n_in)
+            assert not torch.isinf(self.agg_fc.weight).any(), f'agg_fc.weight has INF value'
 
-        x_nn = pad_x[:,:, self.nearest_nodes.view(-1)].reshape(B, T, self.n_nodes, -1, head_in, n_in)
-        # print(x_nn.shape)
-        x_agg = self.agg_fc(x_nn.transpose(-1, -3)).squeeze(-1)# .transpose(-1, -2)
-        assert not torch.isnan(x_agg).any(), f'x_agg has NaN value, agg_fc has NaN value {torch.isnan(self.agg_fc.weight).any()}' # , grad norm {self.agg_fc.weight.grad.data.norm(2).item()}'
-        
-        if self.use_multihead_fc:
-            assert not torch.isinf(self.multihead_fc.weight).any(), 'multihead_fc.weight has INF value'
-            assert not torch.isinf(self.multihead_fc.bias).any(), 'multihead_fc.bias has INF value'
-            x_agg = self.swish1(x_agg)
-            x_agg = self.multihead_fc(x_agg)# .transpose(-1, -2)
-            assert not torch.isnan(x_agg).any(), f'x_agg has NaN value, agg_fc_2 has NaN value {torch.isnan(self.agg_fc_2.weight).any()}'
-        
-        x_agg = x_agg.transpose(-1, -2)
+            x_agg = self.agg_fc(x_nn.transpose(-1, -2)).transpose(-1, -2) # in (B, T, N, n_head, n_in)
+            assert not torch.isnan(x_agg).any(), f'x_agg has NaN value, agg_fc has NaN value {torch.isnan(self.agg_fc.weight).any()}'
+        else:
+            x_nn = pad_x[:,:, self.nearest_nodes.view(-1)].reshape(B, T, self.n_nodes, -1, head_in, n_in)
+            # print(x_nn.shape)
+            x_agg = self.agg_fc(x_nn.transpose(-1, -3)).squeeze(-1)# .transpose(-1, -2)
+            assert not torch.isnan(x_agg).any(), f'x_agg has NaN value, agg_fc has NaN value {torch.isnan(self.agg_fc.weight).any()}'
+            
+            if self.use_multihead_fc:
+                assert not torch.isinf(self.multihead_fc.weight).any(), 'multihead_fc.weight has INF value'
+                assert not torch.isinf(self.multihead_fc.bias).any(), 'multihead_fc.bias has INF value'
+                x_agg = self.swish1(x_agg)
+                x_agg = self.multihead_fc(x_agg)# .transpose(-1, -2)
+                assert not torch.isnan(x_agg).any(), f'x_agg has NaN value, agg_fc_2 has NaN value {torch.isnan(self.agg_fc_2.weight).any()}'
+            
+            x_agg = x_agg.transpose(-1, -2)
         
         if self.use_out_fc:
             assert not torch.isinf(self.out_fc.weight).any(), f'out_fc.weight has INF value'
@@ -226,6 +238,70 @@ class GraphAggregationLayer(nn.Module):
             x_agg = self.relu(x_agg)
 
         return x_agg
+
+# class GraphAggregationLayer_CrossHead(nn.Module):
+#     def __init__(self, n_in, n_out, nearest_nodes, n_heads, in_heads, device, use_out_fc=True, use_multihead_fc=True, alpha=0.2, use_relu=True):
+#         super().__init__()
+#         self.nearest_nodes = nearest_nodes
+#         self.k = nearest_nodes.size(1) - 1
+#         self.n_nodes = nearest_nodes.size(0)
+#         self.n_heads = n_heads
+#         self.device = device
+#         self.in_heads = in_heads
+        
+#         self.agg_fc = nn.Linear(self.in_heads * (self.k + 1), self.n_heads)
+
+#         self.use_out_fc = use_out_fc
+#         if self.use_out_fc:
+#             self.swish2 = CustomActivationFunction()
+#             self.out_fc = nn.Linear(n_in, n_out)
+#         # nn.init.xavier_uniform_(self.agg_fc.weight)
+#         # nn.init.xavier_uniform_(self.out_fc.weight)
+#         self.alpha = alpha
+#         self.use_relu = use_relu
+#         self.relu = CustomActivationFunction() # nn.SELU()
+#         # self.leaky_relu = nn.LeakyReLU(0.1)
+        
+#     def forward(self, x):
+#         '''
+#         x in (B, T, n_nodes, n_heads*, n_in)
+#         '''
+#         # pad x
+#         assert not torch.isnan(x).any(), 'x has NaN value'
+#         B, T, n_in = x.size(0), x.size(1), x.size(-1)
+#         pad_x = torch.zeros_like(x[:,:,0]).unsqueeze(2)
+#         pad_x = torch.cat((x, pad_x), dim=2)
+#         # get signal neighbor list for all signals
+#         if pad_x.ndim == 4:
+#             pad_x = pad_x.unsqueeze(-2)
+            
+#         head_in = pad_x.size(-2)
+
+#         x_nn = pad_x[:,:, self.nearest_nodes.view(-1)].reshape(B, T, self.n_nodes, -1, n_in) # in (B, T, N, k * head_in, n_in) # .reshape(B, T, self.n_nodes, -1, head_in, n_in) # in (B, T, N, k, head_in, n_in)
+#         assert not torch.isinf(self.agg_fc.weight).any(), f'agg_fc.weight has INF value'
+
+#         x_agg = self.agg_fc(x_nn.transpose(-1, -2)).transpose(-1, -2) # in (B, T, N, n_head, n_in)
+#         # assert not torch.isnan(x_agg).any(), f'x_agg has NaN value, agg_fc has NaN value {torch.isnan(self.agg_fc.weight).any()}'
+#         # assert not torch.isinf(self.agg_fc.weight).any(), f'agg_fc_1 has inf value'
+
+#         assert not torch.isnan(x_agg).any(), f'x_agg has NaN value, agg_fc has NaN value {torch.isnan(self.agg_fc.weight).any()}'
+        
+#         if self.use_out_fc:
+#             assert not torch.isinf(self.out_fc.weight).any(), f'out_fc.weight has INF value'
+#             assert not torch.isinf(self.out_fc.bias).any(), f'out_fc.bias has INF value'
+#             x_agg = self.swish2(x_agg)
+#             x_agg = self.out_fc(x_agg)
+#             assert not torch.isnan(x_agg).any(), f'x_agg has NaN value, out_fc has NaN value {torch.isnan(self.out_fc.weight).any()}'
+#         # # custom linear layer
+#         # x_agg = torch.einsum('btnkhi, gkh -> btngi', x_nn, self.agg_mat) # in (B, T, n_nodes, n_heads, n_in)
+#         # x_agg = x_agg + self.bias[None, None, None, :, None]
+#         # cross-time aggregation 
+#         x_agg[:,1:] = (1 - self.alpha) * x_agg[:,1:] + self.alpha * x_agg[:,:-1]
+#         # activation
+#         if self.use_relu:
+#             x_agg = self.relu(x_agg)
+
+#         return x_agg
 
 class GraphConvolutionLayer(nn.Module):
     def __init__(self, n_in, n_out, n_nodes, n_heads, nearest_nodes, nearest_dist, device, sigma=6, alpha=0.2, use_dist_conv=False):

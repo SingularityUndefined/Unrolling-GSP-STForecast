@@ -21,3 +21,80 @@ python train.py --dataset PEMS08 --cuda 0 --batchsize 6 --hop 4 --lr 0.0005 --ti
 2025-01-07 13:10:20,934 - ADMM info: {'ADMM_iters': 25, 'CG_iters': 3, 'PGD_iters': 3, 'mu_u_init': 3, 'mu_d1_init': 3, 'mu_d2_init': 3}
 2025-01-07 13:10:20,934 - graph info: nodes 170, edges 590
 Training: Epoch [6/30], Loss:230.9740, rec_RMSE: 4.9321, RMSE_next:5.9978, RMSE:20.9194, MAE:9.2530, MAPE(%):3595016.1718
+
+
+USE SINGLE FC FALSE
+python train.py --dataset PEMS08 --cuda 0 --batchsize 6 --hop 4 --lr 0.00015 --tin 12 --tout 12 --optim adamw --mode normalize
+---- 2 GAL extrapolation, 2 linear layers----------
+2025-01-08 12:39:56,780 - logger1 - INFO - pretrained path: None
+2025-01-08 12:39:56,781 - logger1 - INFO - learning k hop: 4
+2025-01-08 12:39:56,781 - logger1 - INFO - feature channels: 6
+2025-01-08 12:39:56,781 - logger1 - INFO - batch size: 6
+2025-01-08 12:39:56,781 - logger1 - INFO - learning rate: 0.00015
+2025-01-08 12:39:56,781 - logger1 - INFO - Loss function: MSE
+2025-01-08 12:39:56,781 - logger1 - INFO - Total parameters: 12793
+2025-01-08 12:39:56,781 - logger1 - INFO - device: cuda:0
+2025-01-08 12:39:56,781 - logger1 - INFO - PARAMTER SETTINGS:
+2025-01-08 12:39:56,782 - logger1 - INFO - ADMM blocks: 5
+2025-01-08 12:39:56,782 - logger1 - INFO - ADMM info: {'ADMM_iters': 25, 'CG_iters': 3, 'PGD_iters': 3, 'mu_u_init': 3, 'mu_d1_init': 3, 'mu_d2_init': 3}
+2025-01-08 12:39:56,782 - logger1 - INFO - graph info: nodes 170, edges 590
+
+2025-01-08 13:28:49,168 - logger1 - INFO - Training: Epoch [2/30], Loss:4218.4817, rec_RMSE: 63.0038, RMSE_next:26.3305, RMSE:66.8393, MAE:31.4319, MAPE(%):12894292.1891
+
+
+python train.py --dataset PEMS03 --hop 6 --cuda 1 --batchsize 6 --lr 0.001 --tin 12 --tout 12 --mode normalize --optim adamw
+
+
+--------------------------1.8 14:00------------------------
+python train.py --dataset PEMS08 --cuda 0 --batchsize 8 --hop 3 --lr 2e-4 --tin 12 --tout 12 --optim adamw --mode normalize
+log dir /mnt/qij/Dec-Results/logs/3_hop_concatFE_12_12
+
+Error in Feature extractor in Block 0: Error in input layer - x_agg has NaN value, agg_fc has NaN value True
+
+2025-01-08 19:06:34,704 - logger1 - INFO - Training: Epoch [16/30], Loss:423.0902, rec_RMSE: 15.9623, RMSE_next:6.8859, RMSE:24.3184, MAE:11.2091, MAPE(%):2785316.4479
+2025-01-08 19:06:34,704 - logger1 - INFO - multiQ1, multiQ2, multiM: 1.5927655696868896, 1.2088532447814941, 1.8071461915969849
+2025-01-08 19:06:34,704 - logger1 - INFO - rho, rho_u, rho_d: 2.9378182888031006, 3.0711417198181152, 2.879973888397217
+2025-01-08 19:06:34,704 - logger1 - INFO - max alphas, 0.1800, 0.1800, 0.1800
+2025-01-08 19:06:34,705 - logger1 - INFO - min alphas, 0.0000, 0.0000, 0.0000
+2025-01-08 19:06:34,705 - logger1 - INFO - max betas, 0.1800, 0.1800, 0.1800
+2025-01-08 19:06:34,706 - logger1 - INFO - min betas, 0.0101, 0.0000, 0.0008
+
+
+2025-01-08 19:12:39,319 - logger2 - INFO - [Epoch 16, Iter 144]
+2025-01-08 19:12:39,321 - logger2 - INFO - linear_extrapolation.agg_layer.agg_fc.weight: (-0.4522, 0.4010)	 grad (L2 norm): 256.5384
+2025-01-08 19:12:39,322 - logger2 - INFO - linear_extrapolation.GNN.0.agg_fc.weight: (-0.3961, 0.3847)	 grad (L2 norm): 303.2879
+2025-01-08 19:12:39,322 - logger2 - INFO - model_blocks.0.feature_extractor.input_layer.agg_fc.weight: (-0.7150, 0.6057)	 grad (L2 norm): 43.3853
+2025-01-08 19:12:39,323 - logger2 - INFO - model_blocks.0.feature_extractor.GNN.0.agg_fc.weight: (-0.4722, 0.5567)	 grad (L2 norm): 77.4159
+2025-01-08 19:12:39,323 - logger2 - INFO - model_blocks.1.feature_extractor.input_layer.agg_fc.weight: (-0.4354, 0.6685)	 grad (L2 norm): 60.1635
+2025-01-08 19:12:39,324 - logger2 - INFO - model_blocks.1.feature_extractor.GNN.0.agg_fc.weight: (-0.4273, 0.3658)	 grad (L2 norm): 54.9253
+2025-01-08 19:12:39,324 - logger2 - INFO - model_blocks.2.feature_extractor.input_layer.agg_fc.weight: (-0.6177, 0.4753)	 grad (L2 norm): 52.8682
+2025-01-08 19:12:39,325 - logger2 - INFO - model_blocks.2.feature_extractor.GNN.0.agg_fc.weight: (-0.5471, 0.4231)	 grad (L2 norm): 70.1170
+2025-01-08 19:12:39,325 - logger2 - INFO - model_blocks.3.feature_extractor.input_layer.agg_fc.weight: (-0.7111, 0.6252)	 grad (L2 norm): 27.4200
+2025-01-08 19:12:39,326 - logger2 - INFO - model_blocks.3.feature_extractor.GNN.0.agg_fc.weight: (-0.4882, 0.3450)	 grad (L2 norm): 43.7807
+2025-01-08 19:12:39,326 - logger2 - INFO - model_blocks.4.feature_extractor.input_layer.agg_fc.weight: (-0.5731, 0.7533)	 grad (L2 norm): 119.4376
+2025-01-08 19:12:39,326 - logger2 - INFO - model_blocks.4.feature_extractor.GNN.0.agg_fc.weight: (-0.4567, 0.4485)	 grad (L2 norm): 187.8689
+2025-01-08 19:12:41,812 - logger2 - INFO - [Epoch 16, Iter 145]
+2025-01-08 19:12:41,813 - logger2 - INFO - linear_extrapolation.agg_layer.agg_fc.weight: (-0.4522, 0.4009)	 grad (L2 norm): 296.4376
+2025-01-08 19:12:41,813 - logger2 - INFO - linear_extrapolation.GNN.0.agg_fc.weight: (-0.3961, 0.3847)	 grad (L2 norm): 320.1652
+2025-01-08 19:12:41,814 - logger2 - INFO - model_blocks.0.feature_extractor.input_layer.agg_fc.weight: (nan, nan)	 grad (L2 norm): nan
+2025-01-08 19:12:41,814 - logger2 - INFO - model_blocks.0.feature_extractor.GNN.0.agg_fc.weight: (nan, nan)	 grad (L2 norm): nan
+2025-01-08 19:12:41,815 - logger2 - INFO - model_blocks.1.feature_extractor.input_layer.agg_fc.weight: (-0.4354, 0.6686)	 grad (L2 norm): 14.1980
+2025-01-08 19:12:41,815 - logger2 - INFO - model_blocks.1.feature_extractor.GNN.0.agg_fc.weight: (-0.4274, 0.3658)	 grad (L2 norm): 31.0096
+2025-01-08 19:12:41,816 - logger2 - INFO - model_blocks.2.feature_extractor.input_layer.agg_fc.weight: (-0.6176, 0.4752)	 grad (L2 norm): 49.7013
+2025-01-08 19:12:41,816 - logger2 - INFO - model_blocks.2.feature_extractor.GNN.0.agg_fc.weight: (-0.5470, 0.4231)	 grad (L2 norm): 55.9431
+2025-01-08 19:12:41,816 - logger2 - INFO - model_blocks.3.feature_extractor.input_layer.agg_fc.weight: (-0.7111, 0.6251)	 grad (L2 norm): 20.3271
+2025-01-08 19:12:41,817 - logger2 - INFO - model_blocks.3.feature_extractor.GNN.0.agg_fc.weight: (-0.4882, 0.3451)	 grad (L2 norm): 43.1594
+2025-01-08 19:12:41,817 - logger2 - INFO - model_blocks.4.feature_extractor.input_layer.agg_fc.weight: (-0.5732, 0.7533)	 grad (L2 norm): 72.1916
+2025-01-08 19:12:41,817 - logger2 - INFO - model_blocks.4.feature_extractor.GNN.0.agg_fc.weight: (-0.4566, 0.4485)	 grad (L2 norm): 150.7975
+
+------
+
+python train.py --dataset PEMS03 --hop 4 --cuda 1 --batchsize 10 --lr 1e-4 --tin 12 --tout 12 --mode normalize --optim adamw
+log dir /mnt/qij/Dec-Results/logs/4_hop_concatFE_12_12
+
+ Validation: Epoch [30/30], Loss:523.9085, rec_RMSE:6.1953 RMSE_next:22.3637, RMSE:31.7716, MAE:20.9612, MAPE(%):4112270.1686
+
+python train.py --dataset PEMS04 --cuda 0 --batchsize 4 --hop 4 --lr 1e-4 --tin 12 --tout 12 --optim adamw --mode normalize
+/mnt/qij/Dec-Results/logs/4_hop_concatFE_12_12
+
+python train.py --dataset PEMS07 --hop 4 --cuda 1 --batchsize 4 --lr 1e-4 --tin 12 --tout 12 --mode normalize --optim adamw
