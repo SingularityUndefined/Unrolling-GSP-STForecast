@@ -25,6 +25,8 @@ parser.add_argument('--lr', help='learning rate', default=0.001, type=float)
 parser.add_argument('--debug', help='if debug, save model every iteration', default=False, type=bool)
 parser.add_argument('--optim', help='optimizer', default='adam', type=str)
 parser.add_argument('--mode', help='normalization mode', type=str)
+parser.add_argument('--ablation', help='is abalation model', default=False, type=bool)
+parser.add_argument('--loggrad', help='log gradient norms', default=False, type=bool)
 
 args = parser.parse_args()
 
@@ -59,7 +61,9 @@ def get_degrees(u_edges:torch.Tensor):
 
 k_hop = args.hop
 dataset_dir = '/mnt/qij/datasets/PEMS0X_data/'
-experiment_name = f'{k_hop}_hop_concatFE_{args.tin}_{args.tout}'
+experiment_name = f'{k_hop}_hop_concatFE_{args.tin}_{args.tout}_seed{args.seed}'
+if args.ablation:
+    experiment_name = 'Ablation_' + experiment_name
 dataset_name = args.dataset
 T = args.tin + args.tout
 t_in = args.tin
@@ -96,7 +100,7 @@ model_pretrained_path = None
 
 
 
-model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop).to(device)
+model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation).to(device)
 # 'UnrollingForecasting/MainExperiments/models/v2/PEMS04/direct_4b_4h_6f/val_15.pth'
 
 if model_pretrained_path is not None:
@@ -119,14 +123,12 @@ scheduler = lr_scheduler.StepLR(optimizer, step_size=8, gamma=0.2) # TODO: step 
 log_dir = f'/mnt/qij/Dec-Results/logs/{experiment_name}'
 os.makedirs(log_dir, exist_ok=True)
 log_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.log'
-# logger = create_logger(log_dir, log_filename)
-
-grad_logger_dir = f'/mnt/qij/Dec-Results/grad_logs/{experiment_name}'
-os.makedirs(grad_logger_dir, exist_ok=True)
-# grad_logger = create_logger(grad_logger_dir, log_filename, add_console_handler=False)
 
 logger = setup_logger('logger1', os.path.join(log_dir, log_filename), logging.DEBUG, to_console=True)
-grad_logger = setup_logger('logger2', os.path.join(grad_logger_dir, log_filename), logging.INFO, to_console=False)
+if args.loggrad:
+    grad_logger_dir = f'/mnt/qij/Dec-Results/grad_logs/{experiment_name}'
+    os.makedirs(grad_logger_dir, exist_ok=True)
+    grad_logger = setup_logger('logger2', os.path.join(grad_logger_dir, log_filename), logging.INFO, to_console=False)
 
 debug_model_path = os.path.join(f'/mnt/qij/Dec-Results/debug_models/{experiment_name}', f'{dataset_name}/{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
 
@@ -195,18 +197,19 @@ for epoch in range(num_epochs):
         optimizer.step()
         iteration_count += 1
 
-        grad_logger.info(f'[Epoch {epoch}, Iter {iteration_count}]')
-        for name, param in model.named_parameters():
-            # if not model.use_old_extrapolation:
-            if 'agg_fc.weight' in name:
-                grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
-                if iteration_count % 30 == 9:
-                    print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
-            if model.use_old_extrapolation:
-                if 'linear_extrapolation' in name:
+        if args.loggrad:
+            grad_logger.info(f'[Epoch {epoch}, Iter {iteration_count}]')
+            for name, param in model.named_parameters():
+                # if not model.use_old_extrapolation:
+                if 'agg_fc.weight' in name:
                     grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
                     if iteration_count % 30 == 9:
                         print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
+                if model.use_old_extrapolation:
+                    if 'linear_extrapolation' in name:
+                        grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
+                        if iteration_count % 30 == 9:
+                            print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
         # save model for debug
         if args.debug:
             torch.save(model.state_dict(), debug_model_path)
@@ -236,7 +239,9 @@ for epoch in range(num_epochs):
         if masked_flag:
             pred_mse += ((x - output) ** 2).mean().item()
             pred_mae += (torch.abs(output - x)).mean().item()
-            pred_mape += (torch.abs(output - x) / (x + 1e-6)).mean().item() * 100
+            # mape
+            # zero_mask = # (x < 1e-6)
+            pred_mape += (torch.abs(output - x) / (x + 1e-6))[x < 1e-6].mean().item() * 100
             nearest_loss += ((x[:, 0] - output[:, 0]) ** 2).mean().item()
         else:
             pred_mse += ((x[:,t_in:] - output[:,t_in:]) ** 2).mean().item()
@@ -272,7 +277,7 @@ for epoch in range(num_epochs):
     logger.info(f'min betas, {admm_block.beta_x.min().item():.4f}, {admm_block.beta_zu.min().item():.4f}, {admm_block.beta_zd.min().item():.4f}')
 
     # validation
-    if (epoch + 1) % 6 == 0:
+    if (epoch + 1) % 5 == 0:
         model.eval()
         with torch.no_grad():
             running_loss = 0

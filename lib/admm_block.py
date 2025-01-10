@@ -14,7 +14,8 @@ class ADMMBlock(nn.Module):
                  'mu_u_init':10,
                  'mu_d1_init':10,
                  'mu_d2_init':10,
-                 } ):
+                 }, 
+                 ablation=False):
         super().__init__()
         # edges and edge_weights constructed as self variables
         self.device = device
@@ -24,6 +25,7 @@ class ADMMBlock(nn.Module):
         self.n_channels = n_channels
         # graphs (edges, edge weights)
         self.nearest_nodes = nearest_nodes
+        self.ablation = ablation
 
         self.u_ew = None # place holder # dict: i: [B, T, k, n_heads]
         self.d_ew = None # place holder
@@ -37,14 +39,17 @@ class ADMMBlock(nn.Module):
         self.mu_d1_init = ADMM_info['mu_d1_init'] #$ 3
         self.mu_d2_init = ADMM_info['mu_d2_init'] # 3
         self.mu_u = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.mu_u_init, requires_grad=True)
-        self.mu_d1 = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.mu_d1_init, requires_grad=True)
+        if not self.ablation:
+            self.mu_d1 = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.mu_d1_init, requires_grad=True)
         self.mu_d2 = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.mu_d2_init, requires_grad=True)
 
         # ADMM params, empirical initialized?
         self.rho_init = math.sqrt(self.n_nodes / self.T)
         self.rho_u_init = math.sqrt(self.n_nodes / self.T)
         self.rho_d_init = math.sqrt(self.n_nodes / self.T)
-        self.rho = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_init, requires_grad=True)
+
+        if not self.ablation:
+            self.rho = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_init, requires_grad=True)
         self.rho_u = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_u_init, requires_grad=True)
         self.rho_d = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_d_init, requires_grad=True)
         # CGD params, emperical initialized
@@ -147,7 +152,10 @@ class ADMMBlock(nn.Module):
     def LHS_x(self, x, y, iters):
         HtHx = x.clone()
         HtHx[:,y.size(1):] = torch.zeros_like(x[:,y.size(1):])
-        return HtHx + self.rho[iters] / 2 * self.apply_op_cLdr(x) + (self.rho_u[iters] + self.rho_d[iters]) / 2 * x
+        output = HtHx + (self.rho_u[iters] + self.rho_d[iters]) / 2 * x
+        if not self.ablation:
+            output = output + self.rho[iters] / 2 * self.apply_op_cLdr(x)
+        return output
     
     def LHS_zu(self, zu, iters):
         return self.mu_u[iters] * self.apply_op_Lu(zu) + self.rho_u[iters] / 2 * zu
@@ -261,11 +269,15 @@ class ADMMBlock(nn.Module):
         y = y.unsqueeze(-2).repeat(1,1,1,self.n_heads, 1)
         x = x.unsqueeze(-2).repeat(1,1,1,self.n_heads, 1)
 
-        phi = self.apply_op_Ldr(x)
         # print('any NaN in d_ew', torch.isnan(self.d_ew).nonzero(as_tuple=True), self.d_ew.max(), self.d_ew.min())
         # print('any NaN in phi', torch.isnan(phi).any())
-        gamma, gamma_u, gamma_d = torch.ones_like(x) * 0.1, torch.ones_like(x) * 0.05, torch.ones_like(x) * 0.1
+        gamma_u, gamma_d = torch.ones_like(x) * 0.05, torch.ones_like(x) * 0.1
+        if not self.ablation:
+            gamma = torch.ones_like(x) * 0.1
+            phi = self.apply_op_Ldr(x)
+            
         zu, zd = x.clone(), x.clone()
+        
         for i in range(self.ADMM_iters):
             # zu_old, zd_old = zu.clone(), zd.clone()
             # phi_old = phi.clone()
@@ -280,10 +292,13 @@ class ADMMBlock(nn.Module):
                 assert not torch.isinf(x).any() and not torch.isinf(x).any(), f'x has inf value in loop {i}'
             else:
                 # print(torch.isnan(gamma + self.rho[i] * phi).any(), torch.isnan(gamma).any(), )
-                RHS_x = self.apply_op_Ldr_T(gamma + self.rho[i] * phi) / 2 + (self.rho_u[i] * zu + self.rho_d[i] * zd) / 2 - (gamma_u + gamma_d) / 2 + Hty
+                RHS_x = (self.rho_u[i] * zu + self.rho_d[i] * zd) / 2 - (gamma_u + gamma_d) / 2 + Hty
+                if not self.ablation:
+                    RHS_x = RHS_x + self.apply_op_Ldr_T(gamma + self.rho[i] * phi) / 2
                 # print(torch.isnan(zu).any(), torch.isnan(zd).any())
-                assert not torch.isnan(gamma + self.rho[i] * phi).any(), f'Ldr T input has NaN in loop {i}, gamma {torch.isnan(gamma).any()}, rho[i] {torch.isnan(self.rho[i]).any()}, phi {torch.isnan(phi).any()}'
-                assert not torch.isnan(RHS_x).any(), f'RHS_x has NaN value in loop {i}, d_ew in {self.d_ew.max().item():.4f}, {self.d_ew.min().item():.4f}, NaN {torch.isnan(self.d_ew).any()}, (rho, rho_u, rho_d)[i] has NaN ({torch.isnan(self.rho[i]).any()}, {torch.isnan(self.rho_u[i]).any()}, {torch.isnan(self.rho_d[i]).any()}), (z_u, z_d) has NaN ({torch.isnan(zu).any()}, {torch.isnan(zd).any()}), (gamma, gamma_u, gamma_d) has NaN ({torch.isnan(gamma).any()}, {torch.isnan(gamma_u).any()}, {torch.isnan(gamma_d).any()})'
+                    assert not torch.isnan(gamma + self.rho[i] * phi).any(), f'Ldr T input has NaN in loop {i}, gamma {torch.isnan(gamma).any()}, rho[i] {torch.isnan(self.rho[i]).any()}, phi {torch.isnan(phi).any()}'
+
+                assert not torch.isnan(RHS_x).any(), f'RHS_x has NaN value in loop {i}, d_ew in {self.d_ew.max().item():.4f}, {self.d_ew.min().item():.4f}, NaN {torch.isnan(self.d_ew).any()}, (rho_u, rho_d)[i] has NaN ({torch.isnan(self.rho_u[i]).any()}, {torch.isnan(self.rho_d[i]).any()}), (z_u, z_d) has NaN ({torch.isnan(zu).any()}, {torch.isnan(zd).any()}), (gamma_u, gamma_d) has NaN ({torch.isnan(gamma_u).any()}, {torch.isnan(gamma_d).any()})'
                 assert not torch.isinf(RHS_x).any() and not torch.isinf(-RHS_x).any(), f'RHS_x has inf value in loop {i}'
                 # print('RHS_x', torch.isnan(RHS_x).any(), RHS_x.max(), RHS_x.min())
                 # solve x with zu, zd, update x
@@ -306,8 +321,10 @@ class ADMMBlock(nn.Module):
                 gamma_d = gamma_d + self.rho_d[i] * (x - zd)
             # udpata phi
             # phi = self.Phi_PGD(phi, x, gamma, i) # 
-            phi = self.phi_direct(x, gamma, i)
-            gamma = gamma + self.rho[i] * (phi - self.apply_op_Ldr(x))
+            if not self.ablation:
+                phi = self.phi_direct(x, gamma, i)
+                gamma = gamma + self.rho[i] * (phi - self.apply_op_Ldr(x))
+                assert torch.isnan(gamma).any() or torch.isnan(phi).any(), f'gamma has NaN {torch.isnan(gamma).any()}, phi has NaN {torch.isnan(phi).any()}'
         #     # criterion
         #     primal_residual = max(torch.norm(phi - self.apply_op_Ldr(x)), torch.norm(x - zu), torch.norm(x - zd))
         #     dual_residual = max(torch.norm(-self.rho[i] * self.apply_op_Ldr_T(phi - phi_old)), torch.norm(-self.rho_u[i] * (zu - zu_old)), torch.norm(-self.rho_d[i] * (zd - zd_old)))

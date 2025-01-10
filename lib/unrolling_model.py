@@ -41,7 +41,8 @@ class UnrollingModel(nn.Module):
                  use_extrapolation=True,
                  use_old_extrapolation=False,
                  extrapolation_agg_layers=2,
-                 sigma_ratio=450
+                 sigma_ratio=450,
+                 ablation=False
                  ):
         super().__init__()
         self.num_blocks = num_blocks
@@ -50,6 +51,7 @@ class UnrollingModel(nn.Module):
         self.t_in = t_in
         self.n_heads = n_heads
         self.use_norm = use_norm
+        self.ablation = ablation
 
         # define a graph connection pattern
         self.kNN = None
@@ -103,7 +105,8 @@ class UnrollingModel(nn.Module):
                         n_channels=signal_channels,
                         nearest_nodes=self.nearsest_nodes,
                         device=device,
-                        ADMM_info=ADMM_info
+                        ADMM_info=ADMM_info,
+                        ablation=self.ablation
                     ),
                     'graph_learning_module': GraphLearningModule(
                         T=T,

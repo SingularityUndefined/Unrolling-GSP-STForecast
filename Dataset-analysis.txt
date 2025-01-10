@@ -98,3 +98,6 @@ python train.py --dataset PEMS04 --cuda 0 --batchsize 4 --hop 4 --lr 1e-4 --tin 
 /mnt/qij/Dec-Results/logs/4_hop_concatFE_12_12
 
 python train.py --dataset PEMS07 --hop 4 --cuda 1 --batchsize 4 --lr 1e-4 --tin 12 --tout 12 --mode normalize --optim adamw
+
+python train.py --dataset PEMS07 --hop 4 --cuda 1 --batchsize 4 --lr 1e-4 --tin 12 --tout 12 --mode normalize --optim adamw
+

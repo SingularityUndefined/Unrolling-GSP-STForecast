@@ -378,7 +378,7 @@ class FeatureExtractor(nn.Module):
             out = self.input_layer(x)
         except AssertionError as ae:
             raise ValueError(f'Error in input layer - {ae}')
-        assert not torch.isnan(out).any(), 'GCN Feature Extractor 1st layer NaN' 
+        assert not torch.isnan(out).any(), 'GAL Feature Extractor 1st layer NaN' 
     # print('GCN 1:', out.size())
         if self.n_layers == 1:
             return out
