@@ -107,10 +107,12 @@ ADMM_iters = ADMM_info['ADMM_iters']
 import torch.optim as optim
 from torch.optim import lr_scheduler
 
+assert args.optim in ['adam', 'adamw'], 'args.optim should be adam or adamw'
 if args.optim == 'adam':
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 elif args.optim == 'adamw':
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-2)
+
 scheduler = lr_scheduler.StepLR(optimizer, step_size=8, gamma=0.2) # TODO: step size
 
 # 创建文件处理器
