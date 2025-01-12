@@ -215,6 +215,7 @@ class UnrollingModel(nn.Module):
         y in (batch, t, n_nodes, signal_channels)
         '''
         # linear extrapolation
+        # print('y', y.size(), 't_list', t_list.size())
         B, t, signal_channels = y.size(0), y.size(1), y.size(-1)
         if self.use_norm:
             y, mean, std = layer_norm_on_data(y, self.y_norm_shape)

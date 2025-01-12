@@ -324,7 +324,7 @@ class ADMMBlock(nn.Module):
             if not self.ablation:
                 phi = self.phi_direct(x, gamma, i)
                 gamma = gamma + self.rho[i] * (phi - self.apply_op_Ldr(x))
-                assert torch.isnan(gamma).any() or torch.isnan(phi).any(), f'gamma has NaN {torch.isnan(gamma).any()}, phi has NaN {torch.isnan(phi).any()}'
+                assert not (torch.isnan(gamma).any() or torch.isnan(phi).any()), f'gamma has NaN {torch.isnan(gamma).any()}, phi has NaN {torch.isnan(phi).any()}'
         #     # criterion
         #     primal_residual = max(torch.norm(phi - self.apply_op_Ldr(x)), torch.norm(x - zu), torch.norm(x - zd))
         #     dual_residual = max(torch.norm(-self.rho[i] * self.apply_op_Ldr_T(phi - phi_old)), torch.norm(-self.rho_u[i] * (zu - zu_old)), torch.norm(-self.rho_d[i] * (zd - zd_old)))

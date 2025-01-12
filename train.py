@@ -14,19 +14,24 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--cuda', help='CUDA device', type=int)
 parser.add_argument('--dataset', help='dataset name', type=str)
 parser.add_argument('--batchsize', help='batch size', type=int)
-parser.add_argument('--tin', help='time input', default=6, type=int)
-parser.add_argument('--tout', help='time output', default=6, type=int)
+parser.add_argument('--tin', help='time input', default=12, type=int)
+parser.add_argument('--tout', help='time output', default=12, type=int)
 parser.add_argument('--hop', help='k for kNN', default=6, type=int)
 parser.add_argument('--numblock', help='number of admm blocks', default=5, type=int)
 parser.add_argument('--numlayer', help='number of admm layers', default=25, type=int)
 parser.add_argument('--cgiter', help='CGD iterations', default=3, type=int)
 parser.add_argument('--seed', help='random seed', default=3407, type=int)
-parser.add_argument('--lr', help='learning rate', default=0.001, type=float)
+parser.add_argument('--lr', help='learning rate', default=1e-4, type=float)
 parser.add_argument('--debug', help='if debug, save model every iteration', default=False, type=bool)
-parser.add_argument('--optim', help='optimizer', default='adam', type=str)
-parser.add_argument('--mode', help='normalization mode', type=str)
-parser.add_argument('--ablation', help='is abalation model', default=False, type=bool)
-parser.add_argument('--loggrad', help='log gradient norms', default=False, type=bool)
+parser.add_argument('--optim', help='optimizer', default='adamw', type=str)
+parser.add_argument('--mode', help='normalization mode', default='normalize', type=str)
+parser.add_argument('--ablation', dest='ablation', action='store_true', help='run ablation model') 
+parser.add_argument('--stepsize', help='stepLR stepsize', default=8, type=int)
+parser.set_defaults(ablation=False)
+# parser.add_argument('--no-flag', dest='flag', action='store_false', help='设置标志为False')
+# parser.add_argument('--ablation', help='is abalation model', default=False, type=bool)
+parser.add_argument('--loggrad', help='log gradient norms', default=1, type=int)
+parser.add_argument('--epochs', help='running epochs', default=30, type=int)
 
 args = parser.parse_args()
 
@@ -35,7 +40,7 @@ seed_everything(args.seed)
 device = torch.device('cuda:' + str(args.cuda) if torch.cuda.is_available() else 'cpu')
 batch_size = args.batchsize
 learning_rate = args.lr# 1e-3
-num_epochs = 30
+num_epochs = args.epochs
 num_workers = 4
 
 # load datasets
@@ -99,7 +104,7 @@ ADMM_info = {
 model_pretrained_path = None
 
 
-
+print('args.ablation', args.ablation)
 model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation).to(device)
 # 'UnrollingForecasting/MainExperiments/models/v2/PEMS04/direct_4b_4h_6f/val_15.pth'
 
@@ -117,7 +122,7 @@ if args.optim == 'adam':
 elif args.optim == 'adamw':
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-2)
 
-scheduler = lr_scheduler.StepLR(optimizer, step_size=8, gamma=0.2) # TODO: step size
+scheduler = lr_scheduler.StepLR(optimizer, step_size=args.stepsize, gamma=0.2) # TODO: step size
 
 # 创建文件处理器
 log_dir = f'/mnt/qij/Dec-Results/logs/{experiment_name}'
@@ -197,18 +202,18 @@ for epoch in range(num_epochs):
         optimizer.step()
         iteration_count += 1
 
-        if args.loggrad:
+        if (iteration_count + 1) % args.loggrad == 0:
             grad_logger.info(f'[Epoch {epoch}, Iter {iteration_count}]')
             for name, param in model.named_parameters():
                 # if not model.use_old_extrapolation:
                 if 'agg_fc.weight' in name:
                     grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
-                    if iteration_count % 30 == 9:
+                    if (iteration_count + 1) % 30 == 0:
                         print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
                 if model.use_old_extrapolation:
                     if 'linear_extrapolation' in name:
                         grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
-                        if iteration_count % 30 == 9:
+                        if (iteration_count + 1) % 30 == 0:
                             print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
         # save model for debug
         if args.debug:
@@ -270,7 +275,9 @@ for epoch in range(num_epochs):
 
     logger.info(f'Training: Epoch [{epoch + 1}/{num_epochs}], Loss:{total_loss:.4f}, rec_RMSE: {rec_rmse:.4f}, RMSE_next:{nearest_rmse:.4f}, RMSE:{pred_rmse:.4f}, MAE:{pred_mae:.4f}, MAPE(%):{pred_mape:.4f}')
     logger.info(f'multiQ1, multiQ2, multiM: {glm.multiQ1.max().item()}, {glm.multiQ2.max().item()}, {glm.multiM.max().item()}')
-    logger.info(f'rho, rho_u, rho_d: {admm_block.rho.max().item()}, {admm_block.rho_u.max().item()}, {admm_block.rho_d.max().item()}')
+    if not args.ablation:
+        logger.info(f'rho: {admm_block.rho.max().item()}')
+    logger.info(f'rho_u, rho_d: {admm_block.rho_u.max().item()}, {admm_block.rho_d.max().item()}')
     logger.info(f'max alphas, {admm_block.alpha_x.max().item():.4f}, {admm_block.alpha_zu.max().item():.4f}, {admm_block.alpha_zd.max().item():.4f}')
     logger.info(f'min alphas, {admm_block.alpha_x.min().item():.4f}, {admm_block.alpha_zu.min().item():.4f}, {admm_block.alpha_zd.min().item():.4f}')
     logger.info(f'max betas, {admm_block.beta_x.max().item():.4f}, {admm_block.beta_zu.max().item():.4f}, {admm_block.beta_zd.max().item():.4f}')
