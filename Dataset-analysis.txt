@@ -101,3 +101,11 @@ python train.py --dataset PEMS07 --hop 4 --cuda 1 --batchsize 4 --lr 1e-4 --tin 
 
 python train.py --dataset PEMS07 --hop 4 --cuda 1 --batchsize 4 --lr 1e-4 --tin 12 --tout 12 --mode normalize --optim adamw
 
+
+
+---------------Jan 13----------
+Ablations: on Lab627C4
+
+
+
+More trainings: on Lab627C5
