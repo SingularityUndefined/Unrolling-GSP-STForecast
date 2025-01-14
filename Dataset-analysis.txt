@@ -97,15 +97,30 @@ log dir /mnt/qij/Dec-Results/logs/4_hop_concatFE_12_12
 python train.py --dataset PEMS04 --cuda 0 --batchsize 4 --hop 4 --lr 1e-4 --tin 12 --tout 12 --optim adamw --mode normalize
 /mnt/qij/Dec-Results/logs/4_hop_concatFE_12_12
 
+Epoch [30/30], Loss:300.8046, rec_RMSE:3.3969 RMSE_next:18.1780, RMSE:24.2914, MAE:10.4769, MAPE(%):7277711.0064
+
 python train.py --dataset PEMS07 --hop 4 --cuda 1 --batchsize 4 --lr 1e-4 --tin 12 --tout 12 --mode normalize --optim adamw
 
 python train.py --dataset PEMS07 --hop 4 --cuda 1 --batchsize 4 --lr 1e-4 --tin 12 --tout 12 --mode normalize --optim adamw
+
+Validation: Epoch [30/30], Loss:1020.5657, rec_RMSE:6.9535 RMSE_next:32.2438, RMSE:44.6406, MAE:30.1050, MAPE(%):8347259.2687
 
 
 
 ---------------Jan 13----------
 Ablations: on Lab627C4
+python train.py --dataset PEMS03 --hop 4 --batchsize 10 --ablation --loggrad 10 --cuda 0 
+    [Error (epoch 1, iter 261/328): Feature Extractor in Block 3 has NaN in input_layer]
+python train.py --dataset PEMS03 --hop 4 --batchsize 10 --ablation --loggrad 10 --cuda 0
+    Error in [Epoch 1, Iter 92] - Error in Feature extractor in Block 3: Error in input layer - x_agg has NaN value, agg_fc has NaN value True
+--lr 5e-5 依然nan
+尝试换成adam
+
+必须尝试look into the Laplacians
 
 
 
 More trainings: on Lab627C5
+
+step size = 20, num_epoch = 60. See the results of PEMS03 and 07, which is not that good with the results of baselines.
+step size should not be larger than 10.

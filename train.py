@@ -22,15 +22,17 @@ parser.add_argument('--numlayer', help='number of admm layers', default=25, type
 parser.add_argument('--cgiter', help='CGD iterations', default=3, type=int)
 parser.add_argument('--seed', help='random seed', default=3407, type=int)
 parser.add_argument('--lr', help='learning rate', default=1e-4, type=float)
-parser.add_argument('--debug', help='if debug, save model every iteration', default=False, type=bool)
+parser.add_argument('--debug', dest='debug', help='if debug, save model every iteration', action='store_true')
+parser.set_defaults(debug=False)
 parser.add_argument('--optim', help='optimizer', default='adamw', type=str)
 parser.add_argument('--mode', help='normalization mode', default='normalize', type=str)
 parser.add_argument('--ablation', dest='ablation', action='store_true', help='run ablation model') 
 parser.add_argument('--stepsize', help='stepLR stepsize', default=8, type=int)
+parser.add_argument('--gamma', help='stepLR gamma', default=0.2, type=float)
 parser.set_defaults(ablation=False)
 # parser.add_argument('--no-flag', dest='flag', action='store_false', help='设置标志为False')
 # parser.add_argument('--ablation', help='is abalation model', default=False, type=bool)
-parser.add_argument('--loggrad', help='log gradient norms', default=1, type=int)
+parser.add_argument('--loggrad', help='log gradient norms', default=20, type=int)
 parser.add_argument('--epochs', help='running epochs', default=30, type=int)
 
 args = parser.parse_args()
@@ -122,7 +124,7 @@ if args.optim == 'adam':
 elif args.optim == 'adamw':
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-2)
 
-scheduler = lr_scheduler.StepLR(optimizer, step_size=args.stepsize, gamma=0.2) # TODO: step size
+scheduler = lr_scheduler.StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
 
 # 创建文件处理器
 log_dir = f'/mnt/qij/Dec-Results/logs/{experiment_name}'
@@ -185,7 +187,7 @@ for epoch in range(num_epochs):
         try:
             output = model(y, t_list) # in (B, T, nodes, 1)
         except ValueError as ve:
-            print(f'Error in [Epoch {epoch}, Iter {iteration_count}] - {ve}')
+            logger.error(f'Error in [Epoch {epoch}, Iter {iteration_count}/{len(train_loader)}] - {ve}')
         # except AssertionError as ae:
            #  print(f'Error in [Epoch {epoch}, Iter {iteration_count}] - {ae}')
         output = data_normalization.recover_data(output)
@@ -203,17 +205,20 @@ for epoch in range(num_epochs):
         iteration_count += 1
 
         if (iteration_count + 1) % args.loggrad == 0:
-            grad_logger.info(f'[Epoch {epoch}, Iter {iteration_count}]')
+            grad_logger.info(f'[Epoch {epoch}, Iter {iteration_count}/{len(train_loader)}]')
+            if (iteration_count + 1) % 60 == 0:
+                print(f'[Epoch {epoch}, Iter {iteration_count}/{len(train_loader)}]')
             for name, param in model.named_parameters():
                 # if not model.use_old_extrapolation:
                 if 'agg_fc.weight' in name:
                     grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
-                    if (iteration_count + 1) % 30 == 0:
+                    if (iteration_count + 1) % 60 == 0:
+                        # print(f'[Epoch {epoch}, Iter {iteration_count}]')
                         print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
                 if model.use_old_extrapolation:
                     if 'linear_extrapolation' in name:
                         grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
-                        if (iteration_count + 1) % 30 == 0:
+                        if (iteration_count + 1) % 60 == 0:
                             print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
         # save model for debug
         if args.debug:

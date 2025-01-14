@@ -87,10 +87,13 @@ class GALExtrapolation(nn.Module):
         
         try:
             agg = self.agg_layer(x)
-            if self.n_layers > 1:
-                agg = self.GNN(agg)
         except AssertionError as ae:
             raise ValueError(f'Error in GALExtrapolation:agg_layer - {ae}')
+        if self.n_layers > 1:
+            try:
+                agg = self.GNN(agg)
+            except AssertionError as ae:
+                raise ValueError(f'Error in GALExtrapolation:GNN - {ae}')
         
         agg = agg.permute(0,2,4,1,3).reshape(B, n_nodes, n_channels, -1) # in (B, N, n_channels, t_in * n_heads)
         y = self.shrink(agg).permute(0,3,1,2)
