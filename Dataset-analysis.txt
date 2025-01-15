@@ -124,3 +124,17 @@ More trainings: on Lab627C5
 
 step size = 20, num_epoch = 60. See the results of PEMS03 and 07, which is not that good with the results of baselines.
 step size should not be larger than 10.
+
+python train.py --dataset PEMS03 --hop 6 --batchsize 12 --ablation --loggrad 10 --cuda 0 --lr
+ 1e-4  --stepsize 10 --epoch 50
+    Error in [Epoch 13, Iter 401/437] - Error in GALExtrapolation:agg_layer - x_agg has NaN value, agg_fc has NaN value True
+下一步考虑把clamp params改回0.20？
+
+---
+
+
+____JAN 15________________
+(blue) python train.py --dataset PEMS03 --hop 6 --batchsize 8 --loggrad 10 --cuda 0 --lr 1e-4  --stepsize 8 --epoch 50 --seed 42
+
+(red) python train.py --dataset PEMS03 --hop 6 --batchsize 12 --ablation --loggrad 10 --cuda 1 --lr 1e-4  --stepsize 
+8 --epoch 50 --seed 42

@@ -141,20 +141,24 @@ debug_model_path = os.path.join(f'/mnt/qij/Dec-Results/debug_models/{experiment_
 
 print('log dir', log_dir)
 logger.info('#################################################')
+logger.info('PARAMETER SETTINGS:')
+for arg, value in vars(args).items():
+    logger.info(f"{arg}: {value}")
+logger.info('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
 total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 logger.info(f'pretrained path: {model_pretrained_path}')
-logger.info(f'learning k hop: {k_hop}')
+# logger.info(f'learning k hop: {k_hop}')
 logger.info(f'feature channels: {feature_channels}')
 # logger.info(f'graph sigma: {graph_sigma}')
-logger.info(f'batch size: {batch_size}')
-logger.info(f'learning rate: {learning_rate}')
+# logger.info(f'batch size: {batch_size}')
+# logger.info(f'learning rate: {learning_rate}')
 logger.info(f'Loss function: {loss_name}')
 logger.info(f"Total parameters: {total_params}")
-logger.info(f'device: {device}')
+# logger.info(f'device: {device}')
 logger.info('PARAMTER SETTINGS:')
 logger.info(f'ADMM blocks: {num_admm_blocks}')
 logger.info(f'ADMM info: {ADMM_info}')
-logger.info(f'graph info: nodes {train_set.n_nodes}, edges {train_set.n_edges}')
+logger.info(f'graph info: nodes {train_set.n_nodes}, edges {train_set.n_edges}, signal channels {signal_channels}')
 logger.info('--------BEGIN TRAINING PROCESS------------')
 
 grad_logger.info('------BEGIN TRAINING PROCESS-------')
@@ -164,6 +168,14 @@ os.makedirs(model_dir, exist_ok=True)
 masked_flag = False
 # train models
 # test = True
+plot_list = f'/mnt/qij/Dec-Results/loss_curve/{experiment_name}'
+os.makedirs(plot_list, exist_ok=True)
+plot_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.png'
+plot_path = os.path.join(plot_list, plot_filename)
+
+train_loss_list = []
+val_loss_list = []
+
 for epoch in range(num_epochs):
     # TODO: remember to / 50 # don't need now
     model.train()
@@ -187,6 +199,9 @@ for epoch in range(num_epochs):
         try:
             output = model(y, t_list) # in (B, T, nodes, 1)
         except ValueError as ve:
+            # plot the loss curve from loss_list
+            # plot_loss_curve(loss_list, log_dir)
+            plot_loss_curve(train_loss_list, plot_path)
             logger.error(f'Error in [Epoch {epoch}, Iter {iteration_count}/{len(train_loader)}] - {ve}')
         # except AssertionError as ae:
            #  print(f'Error in [Epoch {epoch}, Iter {iteration_count}] - {ae}')
@@ -206,23 +221,22 @@ for epoch in range(num_epochs):
 
         if (iteration_count + 1) % args.loggrad == 0:
             grad_logger.info(f'[Epoch {epoch}, Iter {iteration_count}/{len(train_loader)}]')
-            if (iteration_count + 1) % 60 == 0:
+            if (iteration_count + 1) % 60 == 0 and args.debug:
                 print(f'[Epoch {epoch}, Iter {iteration_count}/{len(train_loader)}]')
             for name, param in model.named_parameters():
                 # if not model.use_old_extrapolation:
                 if 'agg_fc.weight' in name:
                     grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
-                    if (iteration_count + 1) % 60 == 0:
+                    if (iteration_count + 1) % 60 == 0 and args.debug:
                         # print(f'[Epoch {epoch}, Iter {iteration_count}]')
                         print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
                 if model.use_old_extrapolation:
                     if 'linear_extrapolation' in name:
                         grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
-                        if (iteration_count + 1) % 60 == 0:
+                        if (iteration_count + 1) % 60 == 0 and args.debug:
                             print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
         # save model for debug
-        if args.debug:
-            torch.save(model.state_dict(), debug_model_path)
+        
 
         # max_grad = 0.0 
         # max_grad_param_name = None
@@ -242,7 +256,9 @@ for epoch in range(num_epochs):
 
         # print(f'Gradient norm: {total_norm}')
         # clamp param
-        model.clamp_param(0.18, 0.18)
+        model.clamp_param(0.20, 0.20)
+        if args.debug:
+            torch.save(model.state_dict(), debug_model_path)
         # loggers
         running_loss += loss.item()
         # with torch.no_grad():
@@ -254,9 +270,12 @@ for epoch in range(num_epochs):
             pred_mape += (torch.abs(output - x) / (x + 1e-6))[x < 1e-6].mean().item() * 100
             nearest_loss += ((x[:, 0] - output[:, 0]) ** 2).mean().item()
         else:
-            pred_mse += ((x[:,t_in:] - output[:,t_in:]) ** 2).mean().item()
-            pred_mae += (torch.abs(output[:, t_in:] - x[:,t_in:])).mean().item()
-            pred_mape += (torch.abs(output[:, t_in:] - x[:,t_in:]) / (x[:,t_in:] + 1e-6)).mean().item() * 100
+            x_pred = x[:,t_in:]
+            output_pred = output[:,t_in:]   
+            mask = (x_pred > 1e-8)
+            pred_mse += ((x_pred - output_pred) ** 2).mean().item()
+            pred_mae += (torch.abs(output_pred - x_pred)).mean().item()
+            pred_mape += (torch.abs(output_pred[mask] - x_pred[mask]) / x_pred[mask]).mean().item() * 100
             nearest_loss += ((x[:, t_in] - output[:, t_in]) ** 2 / y.size(0)).mean().item()
 
         glm = model.model_blocks[0]['graph_learning_module']
@@ -266,6 +285,7 @@ for epoch in range(num_epochs):
     logger.info(f'output: ({output.max().item()}, {output.min().item()})')
 
     total_loss = running_loss / len(train_loader)
+    train_loss_list.append(total_loss)
     nearest_rmse = math.sqrt(nearest_loss / len(train_loader))
     rec_rmse = math.sqrt(rec_mse / len(train_loader))
     pred_rmse = math.sqrt(pred_mse / len(train_loader))
@@ -323,12 +343,16 @@ for epoch in range(num_epochs):
                     pred_mape += (torch.abs(output - x) / x).mean().item() * 100
                     nearest_loss += ((x[:, 0] - output[:, 0]) ** 2).mean().item()
                 else:
-                    pred_mse += ((x[:,t_in:] - output[:,t_in:]) ** 2).mean().item()
-                    pred_mae += (torch.abs(output[:, t_in:] - x[:,t_in:])).mean().item()
-                    pred_mape += (torch.abs(output[:, t_in:] - x[:,t_in:]) / (x[:,t_in:] + 1e-6)).mean().item() * 100
+                    x_pred = x[:,t_in:]
+                    output_pred = output[:,t_in:]
+                    mask = x_pred > 1e-8
+                    pred_mse += ((x_pred - output_pred) ** 2).mean().item()
+                    pred_mae += (torch.abs(output_pred - x_pred)).mean().item()
+                    pred_mape += (torch.abs(output_pred[mask] - x_pred[mask]) / x_pred[mask]).mean().item() * 100
                     nearest_loss += ((x[:, t_in] - output[:, t_in]) ** 2).mean().item()
 
         total_loss = running_loss / len(val_loader)
+        val_loss_list.append(total_loss)
         nearest_rmse = math.sqrt(nearest_loss / len(val_loader))
         rec_rmse = math.sqrt(rec_mse / len(val_loader))
         pred_rmse = math.sqrt(pred_mse / len(val_loader))
@@ -346,3 +370,4 @@ for epoch in range(num_epochs):
         torch.save(model, os.path.join(model_dir, f'val_{epoch+1}.pth'))
 
     # rmse_total = math.sqrt(avg_mse_loss)
+plot_loss_curve(train_loss_list, plot_path)

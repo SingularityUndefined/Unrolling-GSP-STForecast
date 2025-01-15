@@ -1,5 +1,25 @@
 from collections import defaultdict
 
+# find the new connected graphs with our new kNN connections
+def knn_graph(nearest_nodes):
+    """
+    Find the connected subgraphs in a directed graph and return the nodes in each subgraph.
+
+    Args:
+    - nearest_nodes (list of list): List of k-nearest nodes for each node.
+
+    Returns:
+    - list of list: Each sublist contains the indices of the nodes in a connected subgraph.
+    """
+
+    n_nodes = nearest_nodes.size(0)
+    edges = []
+    for node, neighbors in enumerate(nearest_nodes):
+        for neighbor in neighbors and neighbor != -1:
+            edges.append([node, neighbor])
+
+    return edges # find_connected_subgraphs(n_nodes, edges)
+
 def find_connected_subgraphs(n_nodes, edges):
     """
     Find the connected subgraphs in a directed graph and return the nodes in each subgraph.
@@ -50,40 +70,7 @@ result = find_connected_subgraphs(n_nodes, edges)
 print("Connected subgraphs (node indices):", result)
 
 import numpy as np
-
-def calculate_laplacian_matrices(weights, subgraph_indices):
-    """
-    计算子图的拉普拉斯矩阵。
-    
-    Args:
-    - weights (numpy.ndarray): 图的权重矩阵，形状为 (n_nodes, k, n_heads)。
-    - subgraph_indices (list of list): 每个子图的节点索引。
-
-    Returns:
-    - list of numpy.ndarray: 每个子图的拉普拉斯矩阵。
-    """
-    n_nodes, k, n_heads = weights.shape
-    laplacians = []
-
-    for indices in subgraph_indices:
-        # 提取子图的节点数
-        num_nodes = len(indices)
-        
-        # 初始化邻接矩阵
-        adjacency_matrix = np.zeros((num_nodes, num_nodes))
-        
-        # 提取子图中的权重
-        for i, node in enumerate(indices):
-            for neighbor_idx in range(k):
-                neighbor = weights[node, neighbor_idx, :]
-                if neighbor.any():  # 检查是否为零填充
-                    for head in range(n_heads):
-                        neighbor_node = int(neighbor[head])
-                        if neighbor_node in indices:
-                            j = indices.index(neighbor_node)
-                            adjacency_matrix[i, j] += 1  # 假设头的值合适相当
-                
-#APP  LOG                 
+          
 
 
 # 下面是完整的代码实现，包括权重提取、邻接矩阵构建和拉普拉斯矩阵计算。
