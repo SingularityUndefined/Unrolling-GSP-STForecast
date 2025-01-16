@@ -171,7 +171,7 @@ class GraphAggregationLayer(nn.Module):
         self.in_heads = in_heads
         self.use_single_fc = use_single_fc
         self.normalize = normalize
-        
+
         if self.use_single_fc:
             self.use_multihead_fc = use_multihead_fc
             if self.use_multihead_fc:
@@ -258,8 +258,11 @@ class GraphAggregationLayer(nn.Module):
 
         return x_agg
 
-class GraphAggregationLayer_CrossHead(nn.Module):
-    def __init__(self, n_in, n_out, nearest_nodes, n_heads, in_heads, device, use_out_fc=True, use_multihead_fc=True, alpha=0.2, use_relu=True):
+class GraphAggregationLayer_Normalized(nn.Module):
+    '''
+    Graph Aggregation Layer: from neighborhood (N, k) to (N, n_heads)
+    '''
+    def __init__(self, n_in, n_out, nearest_nodes, n_heads, in_heads, device, use_out_fc=True, use_multihead_fc=True, alpha=0.2, use_relu=True, use_single_fc=True, normalize=False):
         super().__init__()
         self.nearest_nodes = nearest_nodes
         self.k = nearest_nodes.size(1) - 1
@@ -267,8 +270,24 @@ class GraphAggregationLayer_CrossHead(nn.Module):
         self.n_heads = n_heads
         self.device = device
         self.in_heads = in_heads
+        self.use_single_fc = use_single_fc
+        self.normalize = normalize
         
-        self.agg_fc = nn.Linear(self.in_heads * (self.k + 1), self.n_heads)
+        if self.use_single_fc:
+            self.use_multihead_fc = use_multihead_fc
+            if self.use_multihead_fc:
+                self.agg_weights = Parameter(torch.randn(self.k + 1, self.in_heads, self.n_heads), requires_grad=True)
+            else:
+                self.agg_weights = Parameter(torch.randn(self.k + 1), requires_grad=True)
+                # self.agg_fc = nn.Linear(self.k + 1, 1)
+        else:
+            self.agg_weights = Parameter(torch.randn(self.k + 1), requires_grad=True)
+            # self.agg_fc = nn.Linear(self.k + 1, 1)
+        
+            self.use_multihead_fc = use_multihead_fc
+            if self.use_multihead_fc:
+                self.swish1 = CustomActivationFunction()
+                self.multihead_fc = nn.Linear(self.in_heads, self.n_heads)
 
         self.use_out_fc = use_out_fc
         if self.use_out_fc:
@@ -295,15 +314,34 @@ class GraphAggregationLayer_CrossHead(nn.Module):
             pad_x = pad_x.unsqueeze(-2)
             
         head_in = pad_x.size(-2)
+        x_nn = pad_x[:,:, self.nearest_nodes.view(-1)].reshape(B, T, self.n_nodes, -1, head_in, n_in)
+        assert not torch.isinf(self.agg_weights).any(), f'agg_weights has INF value'
+        if self.use_single_fc:
+            if self.use_multihead_fc:
+                assert not torch.isinf(self.agg_weights).any(), f'agg_weights has INF value'
 
-        x_nn = pad_x[:,:, self.nearest_nodes.view(-1)].reshape(B, T, self.n_nodes, -1, n_in) # in (B, T, N, k * head_in, n_in) # .reshape(B, T, self.n_nodes, -1, head_in, n_in) # in (B, T, N, k, head_in, n_in)
-        assert not torch.isinf(self.agg_fc.weight).any(), f'agg_fc.weight has INF value'
+                x_agg = self.agg_fc(x_nn.transpose(-1, -2)).transpose(-1, -2) # in (B, T, N, n_head, n_in)
+                assert not torch.isnan(x_agg).any(), f'x_agg has NaN value, agg_fc has NaN value {torch.isnan(self.agg_fc.weight).any()}'
+            else:
+                x_nn = pad_x[:,:, self.nearest_nodes.view(-1)].reshape(B, T, self.n_nodes, -1, head_in, n_in)
+                x_agg = self.agg_fc(x_nn.transpose(-1, -3)).squeeze(-1)
+                assert not torch.isnan(x_agg).any(), f'x_agg has NaN value, agg_fc has NaN value {torch.isnan(self.agg_fc.weight).any()}'
+                x_agg = x_agg.transpose(-1, -2)
 
-        x_agg = self.agg_fc(x_nn.transpose(-1, -2)).transpose(-1, -2) # in (B, T, N, n_head, n_in)
-        # assert not torch.isnan(x_agg).any(), f'x_agg has NaN value, agg_fc has NaN value {torch.isnan(self.agg_fc.weight).any()}'
-        # assert not torch.isinf(self.agg_fc.weight).any(), f'agg_fc_1 has inf value'
-
-        assert not torch.isnan(x_agg).any(), f'x_agg has NaN value, agg_fc has NaN value {torch.isnan(self.agg_fc.weight).any()}'
+        else:
+            x_nn = pad_x[:,:, self.nearest_nodes.view(-1)].reshape(B, T, self.n_nodes, -1, head_in, n_in)
+            # print(x_nn.shape)
+            x_agg = self.agg_fc(x_nn.transpose(-1, -3)).squeeze(-1)# .transpose(-1, -2)
+            assert not torch.isnan(x_agg).any(), f'x_agg has NaN value, agg_fc has NaN value {torch.isnan(self.agg_fc.weight).any()}'
+            
+            if self.use_multihead_fc:
+                assert not torch.isinf(self.multihead_fc.weight).any(), 'multihead_fc.weight has INF value'
+                assert not torch.isinf(self.multihead_fc.bias).any(), 'multihead_fc.bias has INF value'
+                x_agg = self.swish1(x_agg)
+                x_agg = self.multihead_fc(x_agg)# .transpose(-1, -2)
+                assert not torch.isnan(x_agg).any(), f'x_agg has NaN value, agg_fc_2 has NaN value {torch.isnan(self.agg_fc_2.weight).any()}'
+            
+            x_agg = x_agg.transpose(-1, -2)
         
         if self.use_out_fc:
             assert not torch.isinf(self.out_fc.weight).any(), f'out_fc.weight has INF value'

@@ -36,6 +36,8 @@ parser.set_defaults(ablation=False)
 parser.add_argument('--loggrad', help='log gradient norms', default=20, type=int)
 parser.add_argument('--epochs', help='running epochs', default=30, type=int)
 
+parser.add_argument('--clamp', help='clamp parameter', default=0.20, type=float)
+
 args = parser.parse_args()
 
 seed_everything(args.seed)
@@ -78,7 +80,7 @@ def get_degrees(n_nodes, u_edges:torch.Tensor):
     return counts
 
 k_hop = args.hop
-dataset_dir = '/mnt/qij/datasets/PEMS0X_data/'
+dataset_dir = '../datasets/PEMS0X_data/'
 experiment_name = f'{k_hop}_hop_concatFE_{args.tin}_{args.tout}_seed{args.seed}'
 if args.ablation:
     experiment_name = 'Ablation_' + experiment_name
@@ -133,17 +135,17 @@ elif args.optim == 'adamw':
 scheduler = lr_scheduler.StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
 
 # 创建文件处理器
-log_dir = f'/mnt/qij/Dec-Results/logs_midparam/{experiment_name}'
+log_dir = f'../Dec-Results/logs_midparam/{experiment_name}'
 os.makedirs(log_dir, exist_ok=True)
 log_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.log'
 
 logger = setup_logger('logger1', os.path.join(log_dir, log_filename), logging.DEBUG, to_console=True)
 if args.loggrad:
-    grad_logger_dir = f'/mnt/qij/Dec-Results/grad_logs_midparam/{experiment_name}'
+    grad_logger_dir = f'../Dec-Results/grad_logs_midparam/{experiment_name}'
     os.makedirs(grad_logger_dir, exist_ok=True)
     grad_logger = setup_logger('logger2', os.path.join(grad_logger_dir, log_filename), logging.INFO, to_console=False)
 
-debug_model_path = os.path.join(f'/mnt/qij/Dec-Results/debug_models_midparam/{experiment_name}', f'{dataset_name}/{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
+debug_model_path = os.path.join(f'../Dec-Results/debug_models_midparam/{experiment_name}', f'{dataset_name}/{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
 
 print('log dir', log_dir)
 logger.info('#################################################')
@@ -169,12 +171,12 @@ logger.info('--------BEGIN TRAINING PROCESS------------')
 
 grad_logger.info('------BEGIN TRAINING PROCESS-------')
 
-model_dir = os.path.join(f'/mnt/qij/Dec-Results/models_midparam/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
+model_dir = os.path.join(f'../Dec-Results/models_midparam/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
 os.makedirs(model_dir, exist_ok=True)
 masked_flag = False
 # train models
 # test = True
-plot_list = f'/mnt/qij/Dec-Results/loss_curve/{experiment_name}'
+plot_list = f'../Dec-Results/loss_curve_midparam/{experiment_name}'
 os.makedirs(plot_list, exist_ok=True)
 plot_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.png'
 plot_path = os.path.join(plot_list, plot_filename)
@@ -208,7 +210,8 @@ for epoch in range(num_epochs):
             # plot the loss curve from loss_list
             # plot_loss_curve(loss_list, log_dir)
             plot_loss_curve(train_loss_list, val_loss_list, plot_path)
-            logger.error(f'Error in [Epoch {epoch}, Iter {iteration_count}/{len(train_loader)}] - {ve}')
+            logger.error(f'Error in [Epoch {epoch}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}')
+            grad_logger.error(f'Error in [Epoch {epoch}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}')
         # except AssertionError as ae:
            #  print(f'Error in [Epoch {epoch}, Iter {iteration_count}] - {ae}')
         output = data_normalization.recover_data(output)
@@ -225,44 +228,9 @@ for epoch in range(num_epochs):
         optimizer.step()
         iteration_count += 1
 
-        if (iteration_count + 1) % args.loggrad == 0:
-            grad_logger.info(f'[Epoch {epoch}, Iter {iteration_count}/{len(train_loader)}]')
-            if (iteration_count + 1) % 60 == 0 and args.debug:
-                print(f'[Epoch {epoch}, Iter {iteration_count}/{len(train_loader)}]')
-            for name, param in model.named_parameters():
-                # if not model.use_old_extrapolation:
-                if 'agg_fc.weight' in name:
-                    grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
-                    if (iteration_count + 1) % 60 == 0 and args.debug:
-                        # print(f'[Epoch {epoch}, Iter {iteration_count}]')
-                        print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
-                if model.use_old_extrapolation:
-                    if 'linear_extrapolation' in name:
-                        grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
-                        if (iteration_count + 1) % 60 == 0 and args.debug:
-                            print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
-        # save model for debug
+        log_gradients(epoch, num_epochs, iteration_count, train_loader, model, grad_logger, args)
         
-
-        # max_grad = 0.0 
-        # max_grad_param_name = None
-        # for name, param in model.named_parameters(): 
-        #     if param.grad is not None: 
-        #         param_grad_norm = param.grad.data.norm(2).item() 
-        #         if param_grad_norm > max_grad: 
-        #             max_grad = param_grad_norm 
-        #             max_grad_param_name = name
-        # print(f'Max gradient parameter name: {max_grad_param_name}, Max gradient value: {max_grad}')
-
-        # total_norm = 0.0
-        # for p in model.parameters(): 
-        #     param_norm = p.grad.data.norm(2) 
-        #     total_norm += param_norm.item() ** 2 
-        # total_norm = total_norm ** (1. / 2) 
-
-        # print(f'Gradient norm: {total_norm}')
-        # clamp param
-        model.clamp_param(0.20, 0.20)
+        model.clamp_param(args.clamp, args.clamp)
         if args.debug:
             torch.save(model.state_dict(), debug_model_path)
         # loggers
@@ -272,8 +240,8 @@ for epoch in range(num_epochs):
             pred_mse += ((x - output) ** 2).mean().item()
             pred_mae += (torch.abs(output - x)).mean().item()
             # mape
-            # zero_mask = # (x < 1e-6)
-            pred_mape += (torch.abs(output - x) / (x + 1e-6))[x < 1e-6].mean().item() * 100
+            mask = (x > 1e-8)
+            pred_mape += (torch.abs(output[mask] - x[mask]) / x[mask]).mean().item() * 100
             nearest_loss += ((x[:, 0] - output[:, 0]) ** 2).mean().item()
         else:
             x_pred = x[:,t_in:]
@@ -346,7 +314,8 @@ for epoch in range(num_epochs):
                 if masked_flag:
                     pred_mse += ((x - output) ** 2).mean().item()
                     pred_mae += (torch.abs(output - x)).mean().item()
-                    pred_mape += (torch.abs(output - x) / x).mean().item() * 100
+                    mask = (x > 1e-8)
+                    pred_mape += (torch.abs(output[mask] - x[mask]) / x[mask]).mean().item() * 100
                     nearest_loss += ((x[:, 0] - output[:, 0]) ** 2).mean().item()
                 else:
                     x_pred = x[:,t_in:]
