@@ -9,6 +9,7 @@ import os
 import math
 from utils import *
 import argparse
+from collections import Counter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--cuda', help='CUDA device', type=int)
@@ -55,16 +56,26 @@ elif loss_name == 'Huber':
 elif loss_name == 'Mix':
     loss_fn = WeightedMSELoss(args.tin, args.tin + args.tout)
 
-def get_degrees(u_edges:torch.Tensor):
+def get_degrees(n_nodes, u_edges:torch.Tensor):
     '''
     u_edges: ndarray, in (n_edges, 2), already bidirectional
     '''
     n_edges = u_edges.size(0)
-    degrees = np.zeros((n_edges,), dtype=int)
+    degrees = np.zeros((n_nodes,), dtype=int)
     for i in range(n_edges):
         degrees[u_edges[i,0]] += 1
-        # degrees[u_edges[i,1]] += 1
-    return degrees
+    
+    counts = Counter(degrees)
+    # plot histogram of degree counts, percentage
+    plt.figure()
+    plt.bar(counts.keys(), counts.values())
+    # plt.bar(counts.keys(), counts.values())
+    plt.xlabel('Node degree')
+    plt.ylabel('Counts')
+    plt.title('Degree distribution')
+    plt.savefig('degree_distribution.png', dpi=800)
+
+    return counts
 
 k_hop = args.hop
 dataset_dir = '/mnt/qij/datasets/PEMS0X_data/'
@@ -79,15 +90,10 @@ stride = 3
 return_time = True
 
 train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time)
-# print(len(train_loader), len(val_loader), len(test_loader))
 signal_channels = train_set.signal_channel
 
 print('signal channels', signal_channels)
-
-# visualise_graph(train_set.graph_info['u_edges'], train_set.graph_info['u_dist'], dataset_name, dataset_name + '.png')
-# normalization:
-# train_mean, train_std = train_set.data.mean(), train_set.data.std()
-# train_min, train_max = train_set.data.min(), train_set.data.max()
+# data normalization
 data_normalization = Normalization(train_set, args.mode)
 
 num_admm_blocks = args.numblock
@@ -127,17 +133,17 @@ elif args.optim == 'adamw':
 scheduler = lr_scheduler.StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
 
 # 创建文件处理器
-log_dir = f'/mnt/qij/Dec-Results/logs/{experiment_name}'
+log_dir = f'/mnt/qij/Dec-Results/logs_midparam/{experiment_name}'
 os.makedirs(log_dir, exist_ok=True)
 log_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.log'
 
 logger = setup_logger('logger1', os.path.join(log_dir, log_filename), logging.DEBUG, to_console=True)
 if args.loggrad:
-    grad_logger_dir = f'/mnt/qij/Dec-Results/grad_logs/{experiment_name}'
+    grad_logger_dir = f'/mnt/qij/Dec-Results/grad_logs_midparam/{experiment_name}'
     os.makedirs(grad_logger_dir, exist_ok=True)
     grad_logger = setup_logger('logger2', os.path.join(grad_logger_dir, log_filename), logging.INFO, to_console=False)
 
-debug_model_path = os.path.join(f'/mnt/qij/Dec-Results/debug_models/{experiment_name}', f'{dataset_name}/{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
+debug_model_path = os.path.join(f'/mnt/qij/Dec-Results/debug_models_midparam/{experiment_name}', f'{dataset_name}/{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
 
 print('log dir', log_dir)
 logger.info('#################################################')
@@ -163,7 +169,7 @@ logger.info('--------BEGIN TRAINING PROCESS------------')
 
 grad_logger.info('------BEGIN TRAINING PROCESS-------')
 
-model_dir = os.path.join(f'/mnt/qij/Dec-Results/models/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
+model_dir = os.path.join(f'/mnt/qij/Dec-Results/models_midparam/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
 os.makedirs(model_dir, exist_ok=True)
 masked_flag = False
 # train models
@@ -201,7 +207,7 @@ for epoch in range(num_epochs):
         except ValueError as ve:
             # plot the loss curve from loss_list
             # plot_loss_curve(loss_list, log_dir)
-            plot_loss_curve(train_loss_list, plot_path)
+            plot_loss_curve(train_loss_list, val_loss_list, plot_path)
             logger.error(f'Error in [Epoch {epoch}, Iter {iteration_count}/{len(train_loader)}] - {ve}')
         # except AssertionError as ae:
            #  print(f'Error in [Epoch {epoch}, Iter {iteration_count}] - {ae}')
@@ -370,4 +376,4 @@ for epoch in range(num_epochs):
         torch.save(model, os.path.join(model_dir, f'val_{epoch+1}.pth'))
 
     # rmse_total = math.sqrt(avg_mse_loss)
-plot_loss_curve(train_loss_list, plot_path)
+plot_loss_curve(train_loss_list, val_loss_list, plot_path)

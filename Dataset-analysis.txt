@@ -138,3 +138,13 @@ ____JAN 15________________
 
 (red) python train.py --dataset PEMS03 --hop 6 --batchsize 12 --ablation --loggrad 10 --cuda 1 --lr 1e-4  --stepsize 
 8 --epoch 50 --seed 42
+
+python train.py --dataset PEMS03 --hop 6 --batchsize 12 --ablation --loggrad 10 --cuda 1 --lr 1e-4  --stepsize
+ 8 --epoch 50 --seed 42 --gamma 0.15      
+
+
+ -------JAN 16————————
+ 把GAL的pad 0 改成pad -1？ 因为我们normalize了。或者pad最小值？  (无效)
+
+ python train.py --dataset PEMS07 --hop 4 --batchsize 4 --loggrad 10 --cuda 0 --lr 1e-4  --stepsize 8 --epoch 50
+ --seed 42      

@@ -106,10 +106,13 @@ class Normalization():
             return x * (self.max - self.min) + self.min
         
 def plot_loss_curve(train_loss, val_loss, save_path, val_freq=5):
-    plt.figure()
     train_len, val_len = len(train_loss), len(val_loss)
-    plt.plot(list(range(1, train_len + 1)), train_loss, label='train')
-    plt.plot(list(range(1, val_len + 1)) * val_freq, val_loss, label='val')
-    plt.legend()
-    plt.savefig(save_path)
-    plt.close()
+    if train_len > 1:
+        plt.figure()
+        plt.plot(list(range(1, train_len + 1)), train_loss, label='train')
+    if val_len != 0:
+        plt.plot(list(range(val_freq, val_len * val_freq + 1, val_freq)), val_loss, label='val')
+    if train_len > 1:
+        plt.legend()
+        plt.savefig(save_path)
+        plt.close()
