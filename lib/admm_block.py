@@ -15,7 +15,7 @@ class ADMMBlock(nn.Module):
                  'mu_d1_init':10,
                  'mu_d2_init':10,
                  }, 
-                 ablation=False):
+                 ablation='None'):
         super().__init__()
         # edges and edge_weights constructed as self variables
         self.device = device
@@ -24,7 +24,7 @@ class ADMMBlock(nn.Module):
         self.n_heads = n_heads
         self.n_channels = n_channels
         # graphs (edges, edge weights)
-        self.nearest_nodes = nearest_nodes
+        self.nearest_nodes = nearest_nodes.to(torch.int64)
         self.ablation = ablation
 
         self.u_ew = None # place holder # dict: i: [B, T, k, n_heads]
@@ -39,7 +39,7 @@ class ADMMBlock(nn.Module):
         self.mu_d1_init = ADMM_info['mu_d1_init'] #$ 3
         self.mu_d2_init = ADMM_info['mu_d2_init'] # 3
         self.mu_u = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.mu_u_init, requires_grad=True)
-        if not self.ablation:
+        if self.ablation == 'None':
             self.mu_d1 = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.mu_d1_init, requires_grad=True)
         self.mu_d2 = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.mu_d2_init, requires_grad=True)
 
@@ -48,7 +48,7 @@ class ADMMBlock(nn.Module):
         self.rho_u_init = math.sqrt(self.n_nodes / self.T)
         self.rho_d_init = math.sqrt(self.n_nodes / self.T)
 
-        if not self.ablation:
+        if self.ablation == 'None':
             self.rho = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_init, requires_grad=True)
         self.rho_u = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_u_init, requires_grad=True)
         self.rho_d = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_d_init, requires_grad=True)
@@ -100,12 +100,25 @@ class ADMMBlock(nn.Module):
         '''
         x in (B, T, N, n_head, n_channels)
         '''
+        # print('x', x.size())
         assert not torch.isnan(x).any(), 'Ldr T x input x has NaN value'
         B, T = x.size(0), x.size(1)
         pad_x = torch.zeros_like(x[:,:,0], device=self.device).unsqueeze(2)
         pad_x = torch.cat((x, pad_x), dim=2)
+        ##### CHANGE HERE##############################################
+        holder = self.d_ew.unsqueeze(-1) * x[:,1:].unsqueeze(3) # in (B, T-1, N, k, n_heads, n_channels)
+        in_features = torch.zeros((B, T-1, self.n_nodes + 1, self.n_heads, self.n_channels), device=self.device)
+        # print(self.nearest_nodes.view(-1).unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).repeat(B, T-1, 1, self.n_heads, self.n_channels).size(), holder.view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels).size())
+        index = self.nearest_nodes.reshape(-1).unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).repeat(B, T-1, 1, self.n_heads, self.n_channels)
+        index[index == -1] = self.n_nodes
 
-        in_features = (self.d_ew.unsqueeze(-1) * pad_x[:, 1:, self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3) # in (B, T-1, N, n_heads, n_channels)
+        if torch.any(index < 0) or torch.any(index >= in_features.size(2)):
+            raise ValueError("Index out of bounds")
+        
+        in_features.scatter_add(2, index, holder.view(B, T-1, -1, self.n_heads, self.n_channels))
+        in_features = in_features[:,:,:-1]
+        ##############################
+        # in_features = (self.d_ew.unsqueeze(-1) * pad_x[:, 1:, self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3) # in (B, T-1, N, n_heads, n_channels)
         # pad in features
         y = x
         y[:,0] = torch.zeros_like(x[:,0])
@@ -153,7 +166,7 @@ class ADMMBlock(nn.Module):
         HtHx = x.clone()
         HtHx[:,y.size(1):] = torch.zeros_like(x[:,y.size(1):])
         output = HtHx + (self.rho_u[iters] + self.rho_d[iters]) / 2 * x
-        if not self.ablation:
+        if self.ablation == 'None':
             output = output + self.rho[iters] / 2 * self.apply_op_cLdr(x)
         return output
     
@@ -272,7 +285,7 @@ class ADMMBlock(nn.Module):
         # print('any NaN in d_ew', torch.isnan(self.d_ew).nonzero(as_tuple=True), self.d_ew.max(), self.d_ew.min())
         # print('any NaN in phi', torch.isnan(phi).any())
         gamma_u, gamma_d = torch.ones_like(x) * 0.05, torch.ones_like(x) * 0.1
-        if not self.ablation:
+        if self.ablation == 'None':
             gamma = torch.ones_like(x) * 0.1
             phi = self.apply_op_Ldr(x)
             
@@ -293,7 +306,7 @@ class ADMMBlock(nn.Module):
             else:
                 # print(torch.isnan(gamma + self.rho[i] * phi).any(), torch.isnan(gamma).any(), )
                 RHS_x = (self.rho_u[i] * zu + self.rho_d[i] * zd) / 2 - (gamma_u + gamma_d) / 2 + Hty
-                if not self.ablation:
+                if self.ablation == 'None':
                     RHS_x = RHS_x + self.apply_op_Ldr_T(gamma + self.rho[i] * phi) / 2
                 # print(torch.isnan(zu).any(), torch.isnan(zd).any())
                     assert not torch.isnan(gamma + self.rho[i] * phi).any(), f'Ldr T input has NaN in loop {i}, gamma {torch.isnan(gamma).any()}, rho[i] {torch.isnan(self.rho[i]).any()}, phi {torch.isnan(phi).any()}'
@@ -321,7 +334,7 @@ class ADMMBlock(nn.Module):
                 gamma_d = gamma_d + self.rho_d[i] * (x - zd)
             # udpata phi
             # phi = self.Phi_PGD(phi, x, gamma, i) # 
-            if not self.ablation:
+            if self.ablation == 'None':
                 phi = self.phi_direct(x, gamma, i)
                 gamma = gamma + self.rho[i] * (phi - self.apply_op_Ldr(x))
                 assert not (torch.isnan(gamma).any() or torch.isnan(phi).any()), f'gamma has NaN {torch.isnan(gamma).any()}, phi has NaN {torch.isnan(phi).any()}'

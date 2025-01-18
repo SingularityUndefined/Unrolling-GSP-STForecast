@@ -42,7 +42,7 @@ class UnrollingModel(nn.Module):
                  use_old_extrapolation=False,
                  extrapolation_agg_layers=2,
                  sigma_ratio=450,
-                 ablation=False
+                 ablation='None'
                  ):
         super().__init__()
         self.num_blocks = num_blocks

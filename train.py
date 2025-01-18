@@ -27,10 +27,10 @@ parser.add_argument('--debug', dest='debug', help='if debug, save model every it
 parser.set_defaults(debug=False)
 parser.add_argument('--optim', help='optimizer', default='adamw', type=str)
 parser.add_argument('--mode', help='normalization mode', default='normalize', type=str)
-parser.add_argument('--ablation', dest='ablation', action='store_true', help='run ablation model') 
+parser.add_argument('--ablation', dest='ablation', default='None', type=str)#action='store_true', help='run ablation model') 
 parser.add_argument('--stepsize', help='stepLR stepsize', default=8, type=int)
 parser.add_argument('--gamma', help='stepLR gamma', default=0.2, type=float)
-parser.set_defaults(ablation=False)
+# parser.set_defaults(ablation=False)
 # parser.add_argument('--no-flag', dest='flag', action='store_false', help='设置标志为False')
 # parser.add_argument('--ablation', help='is abalation model', default=False, type=bool)
 parser.add_argument('--loggrad', help='log gradient norms', default=20, type=int)
@@ -135,17 +135,17 @@ elif args.optim == 'adamw':
 scheduler = lr_scheduler.StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
 
 # 创建文件处理器
-log_dir = f'../Dec-Results/logs_midparam/{experiment_name}'
+log_dir = f'../JanModified/logs_midparam/{experiment_name}'
 os.makedirs(log_dir, exist_ok=True)
 log_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.log'
 
 logger = setup_logger('logger1', os.path.join(log_dir, log_filename), logging.DEBUG, to_console=True)
 if args.loggrad:
-    grad_logger_dir = f'../Dec-Results/grad_logs_midparam/{experiment_name}'
+    grad_logger_dir = f'../JanModified/grad_logs_midparam/{experiment_name}'
     os.makedirs(grad_logger_dir, exist_ok=True)
     grad_logger = setup_logger('logger2', os.path.join(grad_logger_dir, log_filename), logging.INFO, to_console=False)
 
-debug_model_path = os.path.join(f'../Dec-Results/debug_models_midparam/{experiment_name}', f'{dataset_name}/{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
+debug_model_path = os.path.join(f'../JanModified/debug_models_midparam/{experiment_name}', f'{dataset_name}/{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
 
 print('log dir', log_dir)
 logger.info('#################################################')
@@ -171,12 +171,12 @@ logger.info('--------BEGIN TRAINING PROCESS------------')
 
 grad_logger.info('------BEGIN TRAINING PROCESS-------')
 
-model_dir = os.path.join(f'../Dec-Results/models_midparam/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
+model_dir = os.path.join(f'../JanModified/models_midparam/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
 os.makedirs(model_dir, exist_ok=True)
 masked_flag = False
 # train models
 # test = True
-plot_list = f'../Dec-Results/loss_curve_midparam/{experiment_name}'
+plot_list = f'../JanModified/loss_curve_midparam/{experiment_name}'
 os.makedirs(plot_list, exist_ok=True)
 plot_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.png'
 plot_path = os.path.join(plot_list, plot_filename)
