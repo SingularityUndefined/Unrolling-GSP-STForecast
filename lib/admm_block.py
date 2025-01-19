@@ -26,6 +26,7 @@ class ADMMBlock(nn.Module):
         # graphs (edges, edge weights)
         self.nearest_nodes = nearest_nodes.to(torch.int64)
         self.ablation = ablation
+        assert self.ablation in ['None', 'DGLR', 'DGTV', 'UT'], 'ablation should be None, DGLR, DGTV or UT'
 
         self.u_ew = None # place holder # dict: i: [B, T, k, n_heads]
         self.d_ew = None # place holder
@@ -48,10 +49,13 @@ class ADMMBlock(nn.Module):
         self.rho_u_init = math.sqrt(self.n_nodes / self.T)
         self.rho_d_init = math.sqrt(self.n_nodes / self.T)
 
-        if self.ablation == 'None':
+        if self.ablation in ['None', 'DGLR']:
             self.rho = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_init, requires_grad=True)
+
         self.rho_u = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_u_init, requires_grad=True)
-        self.rho_d = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_d_init, requires_grad=True)
+
+        if self.ablation != 'DGLR':
+            self.rho_d = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_d_init, requires_grad=True)
         # CGD params, emperical initialized
         alpha_init = 0.08
         self.alpha_x_init = alpha_init
@@ -64,8 +68,9 @@ class ADMMBlock(nn.Module):
         self.beta_x = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.beta_x_init, requires_grad=True)
         self.alpha_zu = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.alpha_zu_init, requires_grad=True)
         self.beta_zu = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.beta_zu_init, requires_grad=True)
-        self.alpha_zd = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.alpha_zd_init, requires_grad=True)
-        self.beta_zd = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.beta_zd_init, requires_grad=True)
+        if self.ablation != 'DGLR':
+            self.alpha_zd = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.alpha_zd_init, requires_grad=True)
+            self.beta_zd = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.beta_zd_init, requires_grad=True)
         # PGD params: for now we directly solve phi^{tau+1}
         # self.epsilon_init = 0.1
         # self.epsilon = Parameter(torch.ones((self.ADMM_iters, self.PGD_iters), device=self.device) * self.epsilon_init, requires_grad=True)
@@ -117,9 +122,9 @@ class ADMMBlock(nn.Module):
         
         in_features.scatter_add(2, index, holder.view(B, T-1, -1, self.n_heads, self.n_channels))
         in_features = in_features[:,:,:-1]
-        ##############################
+        ############### ORIGINAL Version ###############
         # in_features = (self.d_ew.unsqueeze(-1) * pad_x[:, 1:, self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3) # in (B, T-1, N, n_heads, n_channels)
-        # pad in features
+ ####################################
         y = x
         y[:,0] = torch.zeros_like(x[:,0])
         y[:,:-1] = y[:,:-1] - in_features
@@ -165,9 +170,14 @@ class ADMMBlock(nn.Module):
     def LHS_x(self, x, y, iters):
         HtHx = x.clone()
         HtHx[:,y.size(1):] = torch.zeros_like(x[:,y.size(1):])
-        output = HtHx + (self.rho_u[iters] + self.rho_d[iters]) / 2 * x
-        if self.ablation == 'None':
-            output = output + self.rho[iters] / 2 * self.apply_op_cLdr(x)
+        if self.ablation == 'DGTV':
+            output = HtHx + (self.rho_u[iters] + self.rho_d[iters]) / 2 * x
+        elif self.ablation == 'None':
+            output = HtHx + (self.rho_u[iters] + self.rho_d[iters]) / 2 * x + self.rho[iters] / 2 * self.apply_op_cLdr(x)
+        elif self.ablation == 'UT':
+            pass # TODO
+        elif self.ablation == 'DGLR':
+            output = HtHx + self.rho[iters] / 2 * self.apply_op_cLdr(x) + self.rho_u[iters] / 2 * x
         return output
     
     def LHS_zu(self, zu, iters):
@@ -305,9 +315,14 @@ class ADMMBlock(nn.Module):
                 assert not torch.isinf(x).any() and not torch.isinf(x).any(), f'x has inf value in loop {i}'
             else:
                 # print(torch.isnan(gamma + self.rho[i] * phi).any(), torch.isnan(gamma).any(), )
-                RHS_x = (self.rho_u[i] * zu + self.rho_d[i] * zd) / 2 - (gamma_u + gamma_d) / 2 + Hty
-                if self.ablation == 'None':
-                    RHS_x = RHS_x + self.apply_op_Ldr_T(gamma + self.rho[i] * phi) / 2
+                if self.ablation == 'DGTV':
+                    RHS_x = (self.rho_u[i] * zu + self.rho_d[i] * zd) / 2 - (gamma_u + gamma_d) / 2 + Hty
+                elif self.ablation == 'None':
+                    RHS_x = self.apply_op_Ldr_T(gamma + self.rho[i] * phi) / 2 + (self.rho_u[i] * zu + self.rho_d[i] * zd) / 2 - (gamma_u + gamma_d) / 2 + Hty
+                elif self.ablation == 'UT':
+                    pass
+                elif self.ablation == 'DGLR':
+                    RHS_x = self.apply_op_Ldr_T(gamma + self.rho[i] * phi) / 2 + self.rho_u[i] * zu / 2 - gamma_u / 2 + Hty
                 # print(torch.isnan(zu).any(), torch.isnan(zd).any())
                     assert not torch.isnan(gamma + self.rho[i] * phi).any(), f'Ldr T input has NaN in loop {i}, gamma {torch.isnan(gamma).any()}, rho[i] {torch.isnan(self.rho[i]).any()}, phi {torch.isnan(phi).any()}'
 

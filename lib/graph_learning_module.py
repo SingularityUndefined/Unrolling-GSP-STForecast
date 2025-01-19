@@ -88,7 +88,7 @@ class GALExtrapolation(nn.Module):
         try:
             agg = self.agg_layer(x)
         except AssertionError as ae:
-            raise ValueError(f'Error in GALExtrapolation:agg_layer - {ae}')
+            raise ValueError(f'Error in GALExtrapolation:input_layer - {ae}')
         if self.n_layers > 1:
             try:
                 agg = self.GNN(agg)
@@ -552,7 +552,40 @@ class GraphLearningModule(nn.Module):
         weights = weights * inv_in_degree.unsqueeze(3)
         # print(weights.max(), weights.min(), torch.isnan(weights).any())
         return weights
-
+    ############################### MODIFIED HERE #####################################
+    def undirected_temporal_graph_from_features(self, features):
+        # we need to construct symmetric weights from the cross-frame features
+        B, T = features.size(0), features.size(1)
+        # pad features
+        pad_features = torch.zeros_like(features[:,:,0], device=self.device).unsqueeze(2)
+        pad_features = torch.cat((features, pad_features), dim=2)
+        # same connection as directed graph, compute with one direction first
+        feature_i = pad_features[:,:-1, self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels) # in (B, T-1, N, k, n_heads, n_channels)
+        feature_j = features[:,1:] # in (B, T-1, N, n_heads, n_channels)
+        
+        # print('feature_i, feature_j', feature_i.shape, feature_j.shape)
+        df = feature_i - feature_j.unsqueeze(3) # in (B, T-1, N, k, n_heads, n_channels)
+        Mdf = torch.einsum('hij, btnhj -> btnhi', self.multiN, df)
+        weights = torch.exp(- (Mdf ** 2).sum(-1)) # in (B, T-1, N, k, heads)
+        # mask weights
+        mask = (self.nearest_nodes == -1).unsqueeze(0).unsqueeze(1).unsqueeze(4).repeat(B, T-1, 1, 1, self.n_heads)
+        weights = weights * (~mask)
+        # normalize weights
+        in_degree = weights.sum(3) # in (B, T-1, N, n_heads) # T = [1:]
+        # TODO: compute all the out degrees with the weights. I think we need to find the out list of each node
+        # out_list: still in a tensor (N, k)
+        out_degree = torch.zeros((B, T-1, self.n_nodes, self.n_heads), device=self.device) # T = [:-1]
+        for i in range(self.n_nodes):
+            out_mask = (self.nearest_nodes == i) # move this mask to outside?
+            out_degree[:,:,i] = weights[:,:,i,out_mask].sum(2)
+        pass
+        # degree_j = in_degree[:,:,self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads)
+        # degree_multiply = torch.sqrt(in_degree.unsqueeze(3) * degree_j)
+        # inv_degree_multiply = torch.where(degree_multiply > 0, torch.ones((1,), device=self.device) / degree_multiply, torch.zeros((1,), device=self.device))
+        # inv_degree_multiply = torch.where(inv_degree_multiply == torch.inf, 0, inv_degree_multiply)
+        # weights = weights * inv_degree_multiply.unsqueeze(3)
+        # return weights
+####################################
     def forward(self, features=None):
         '''
         return u_ew and d_ew

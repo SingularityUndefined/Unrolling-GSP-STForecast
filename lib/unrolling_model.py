@@ -38,8 +38,9 @@ class UnrollingModel(nn.Module):
                      'diw_dim': 4
                  },
                  # TODO: change here
-                 use_extrapolation=True,
+                 use_extrapolation=True, # False for LR guess
                  use_old_extrapolation=False,
+                 # use_LR_guess=False,
                  extrapolation_agg_layers=2,
                  sigma_ratio=450,
                  ablation='None'
@@ -204,8 +205,9 @@ class UnrollingModel(nn.Module):
             admm_block.beta_x.data = torch.clamp(admm_block.beta_x.data, 0.0, beta_max)
             admm_block.alpha_zu.data = torch.clamp(admm_block.alpha_zu.data, 0.0, alpha_max)
             admm_block.beta_zu.data = torch.clamp(admm_block.beta_zu.data, 0.0, beta_max)
-            admm_block.alpha_zd.data = torch.clamp(admm_block.alpha_zd.data, 0.0, alpha_max)
-            admm_block.beta_zd.data = torch.clamp(admm_block.beta_zd.data, 0.0, beta_max)
+            if self.ablation != 'DGLR':
+                admm_block.alpha_zd.data = torch.clamp(admm_block.alpha_zd.data, 0.0, alpha_max)
+                admm_block.beta_zd.data = torch.clamp(admm_block.beta_zd.data, 0.0, beta_max)
 
             #W admm_block.epsilon.data = torch.clamp(admm_block.epsilon.data, 0.0, 0.2)
 

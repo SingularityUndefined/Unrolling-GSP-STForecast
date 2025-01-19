@@ -37,7 +37,8 @@ parser.add_argument('--loggrad', help='log gradient norms', default=20, type=int
 parser.add_argument('--epochs', help='running epochs', default=30, type=int)
 
 parser.add_argument('--clamp', help='clamp parameter', default=0.20, type=float)
-
+parser.add_argument('--extrapolation', help='use extrapolation', action='store_true', default=False)
+parser.set_defaults(extrapolation=False)
 args = parser.parse_args()
 
 seed_everything(args.seed)
@@ -82,8 +83,8 @@ def get_degrees(n_nodes, u_edges:torch.Tensor):
 k_hop = args.hop
 dataset_dir = '../datasets/PEMS0X_data/'
 experiment_name = f'{k_hop}_hop_concatFE_{args.tin}_{args.tout}_seed{args.seed}'
-if args.ablation:
-    experiment_name = 'Ablation_' + experiment_name
+if args.ablation != 'None':
+    experiment_name = 'wo_{args.ablation}' + experiment_name
 dataset_name = args.dataset
 T = args.tin + args.tout
 t_in = args.tin
@@ -115,7 +116,7 @@ model_pretrained_path = None
 
 
 print('args.ablation', args.ablation)
-model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation).to(device)
+model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, use_extrapolation=args.extrapolation).to(device)
 # 'UnrollingForecasting/MainExperiments/models/v2/PEMS04/direct_4b_4h_6f/val_15.pth'
 
 if model_pretrained_path is not None:
@@ -230,7 +231,8 @@ for epoch in range(num_epochs):
 
         log_gradients(epoch, num_epochs, iteration_count, train_loader, model, grad_logger, args)
         
-        model.clamp_param(args.clamp, args.clamp)
+        if args.clamp > 0:
+            model.clamp_param(args.clamp, args.clamp)
         if args.debug:
             torch.save(model.state_dict(), debug_model_path)
         # loggers
