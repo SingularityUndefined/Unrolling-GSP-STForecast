@@ -40,9 +40,10 @@ class ADMMBlock(nn.Module):
         self.mu_d1_init = ADMM_info['mu_d1_init'] #$ 3
         self.mu_d2_init = ADMM_info['mu_d2_init'] # 3
         self.mu_u = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.mu_u_init, requires_grad=True)
-        if self.ablation == 'None':
+        if self.ablation in ['None', 'DGLR']:
             self.mu_d1 = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.mu_d1_init, requires_grad=True)
-        self.mu_d2 = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.mu_d2_init, requires_grad=True)
+        if self.ablation != 'DGLR':
+            self.mu_d2 = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.mu_d2_init, requires_grad=True)
 
         # ADMM params, empirical initialized?
         self.rho_init = math.sqrt(self.n_nodes / self.T)
@@ -340,18 +341,19 @@ class ADMMBlock(nn.Module):
                 assert not torch.isnan(RHS_zu).any(), f'RHS_zu has NaN value in loop {i}'
                 assert not torch.isinf(RHS_zu).any() and not torch.isinf(-RHS_zu).any(), f'RHS_zu has inf value in loop {i}'
                 # print('RHS_zu, zu', torch.isnan(RHS_zu).any(), RHS_zu.max(), RHS_zu.min(), torch.isnan(zu).any(), zu.max(), zu.min())
-                if self.ablation != 'DGTV':
+                if self.ablation != 'DGLR':
                     RHS_zd = gamma_d / 2 + self.rho_d[i] / 2 * x
                     zd = self.CG_solver(self.LHS_zd, RHS_zd, zd, i, self.alpha_zd, self.beta_zd)
                     assert not torch.isnan(RHS_zd).any(), f'RHS_zd has NaN value in loop {i}'
                     assert not torch.isinf(RHS_zd).any() and not torch.isinf(-RHS_zd).any(), f'RHS_zd has inf value in loop {i}'
 
                 gamma_u = gamma_u + self.rho_u[i] * (x - zu)
-                if self.ablation != 'DGTV':
+                if self.ablation != 'DGLR':
                     gamma_d = gamma_d + self.rho_d[i] * (x - zd)
             # udpata phi
             # phi = self.Phi_PGD(phi, x, gamma, i) # 
-            if self.ablation == 'None':
+            if self.ablation in ['None', 'DGLR']:
+                # print('executed phi update')
                 phi = self.phi_direct(x, gamma, i)
                 gamma = gamma + self.rho[i] * (phi - self.apply_op_Ldr(x))
                 assert not (torch.isnan(gamma).any() or torch.isnan(phi).any()), f'gamma has NaN {torch.isnan(gamma).any()}, phi has NaN {torch.isnan(phi).any()}'

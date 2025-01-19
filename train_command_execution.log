@@ -128,3 +128,28 @@ Status: Failed
 Start Time: 2025-01-19 14:05:31
 End Time: 2025-01-19 14:05:35
 -----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 1e-3  --stepsize 10 --epoch 50 --clamp 0.5
+Status: Failed
+Start Time: 2025-01-19 08:59:11
+End Time: 2025-01-19 17:51:49
+-----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 1e-3  --stepsize 10 --epoch 50 --clamp 0.8
+Status: Failed
+Start Time: 2025-01-19 17:51:49
+End Time: 2025-01-19 17:51:49
+-----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 1e-3  --stepsize 10 --epoch 50 --clamp -1
+Status: Failed
+Start Time: 2025-01-19 17:51:49
+End Time: 2025-01-19 17:51:49
+-----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 1e-3  --stepsize 5 --epoch 50 --clamp 0.5
+Status: Failed
+Start Time: 2025-01-19 17:51:49
+End Time: 2025-01-19 17:51:49
+-----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 1e-3  --stepsize 10 --epoch 50 --clamp 0.5 --optim adam
+Status: Failed
+Start Time: 2025-01-19 17:51:49
+End Time: 2025-01-19 17:51:49
+-----------------------------

@@ -80,15 +80,15 @@ class WeightedMSELoss(nn.Module):
 
 
 class Normalization():
-    def __init__(self, dataset:TrafficDataset, mode:str):
+    def __init__(self, dataset:TrafficDataset, mode:str, device):
         assert mode in ['normalize', 'standardize'], 'mode should be in [normalize, standardize]'
         self.mode = mode
         if mode == 'normalize':
-            self.mean = dataset.data.mean()
-            self.std = dataset.data.std()
+            self.mean = torch.Tensor(dataset.data.mean(0)).to(device)
+            self.std = torch.Tensor(dataset.data.std(0)).to(device)
         elif mode == 'standardize':
-            self.min = dataset.data.min()
-            self.max = dataset.data.max()
+            self.min = torch.Tensor(dataset.data.min(0)).to(device)
+            self.max = torch.Tensor(dataset.data.max(0)).to(device)
 
     def normalize_data(self, x):
         '''

@@ -102,7 +102,7 @@ signal_channels = train_set.signal_channel
 
 print('signal channels', signal_channels)
 # data normalization
-data_normalization = Normalization(train_set, args.mode)
+data_normalization = Normalization(train_set, args.mode, device)
 
 num_admm_blocks = args.numblock
 num_heads = 4
@@ -293,7 +293,7 @@ for epoch in range(num_epochs):
     logger.info('alpha_x, (%.4f, %.4f), beta_x (%.4f, %.4f)', admm_block.alpha_x.min().item(), admm_block.alpha_x.max().item(), admm_block.beta_x.min().item(), admm_block.beta_x.max().item())
     logger.info('alpha_zu, (%.4f, %.4f), beta_zu (%.4f, %.4f)', admm_block.alpha_zu.min().item(), admm_block.alpha_zu.max().item(), admm_block.beta_zu.min().item(), admm_block.beta_zu.max().item())
     if args.ablation != 'DGLR':
-    logger.info('alpha_zd, (%.4f, %.4f), beta_zd (%.4f, %.4f)', admm_block.alpha_zd.min().item(), admm_block.alpha_zd.max().item(), admm_block.beta_zd.min().item(), admm_block.beta_zd.max().item())
+        logger.info('alpha_zd, (%.4f, %.4f), beta_zd (%.4f, %.4f)', admm_block.alpha_zd.min().item(), admm_block.alpha_zd.max().item(), admm_block.beta_zd.min().item(), admm_block.beta_zd.max().item())
 
     # validation
     if (epoch + 1) % 5 == 0:
