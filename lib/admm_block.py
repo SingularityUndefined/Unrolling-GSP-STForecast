@@ -295,7 +295,7 @@ class ADMMBlock(nn.Module):
         # print('any NaN in d_ew', torch.isnan(self.d_ew).nonzero(as_tuple=True), self.d_ew.max(), self.d_ew.min())
         # print('any NaN in phi', torch.isnan(phi).any())
         gamma_u, gamma_d = torch.ones_like(x) * 0.05, torch.ones_like(x) * 0.1
-        if self.ablation == 'None':
+        if self.ablation in ['None', 'DGLR']:
             gamma = torch.ones_like(x) * 0.1
             phi = self.apply_op_Ldr(x)
             
@@ -340,13 +340,15 @@ class ADMMBlock(nn.Module):
                 assert not torch.isnan(RHS_zu).any(), f'RHS_zu has NaN value in loop {i}'
                 assert not torch.isinf(RHS_zu).any() and not torch.isinf(-RHS_zu).any(), f'RHS_zu has inf value in loop {i}'
                 # print('RHS_zu, zu', torch.isnan(RHS_zu).any(), RHS_zu.max(), RHS_zu.min(), torch.isnan(zu).any(), zu.max(), zu.min())
-                RHS_zd = gamma_d / 2 + self.rho_d[i] / 2 * x
-                zd = self.CG_solver(self.LHS_zd, RHS_zd, zd, i, self.alpha_zd, self.beta_zd)
-                assert not torch.isnan(RHS_zd).any(), f'RHS_zd has NaN value in loop {i}'
-                assert not torch.isinf(RHS_zd).any() and not torch.isinf(-RHS_zd).any(), f'RHS_zd has inf value in loop {i}'
+                if self.ablation != 'DGTV':
+                    RHS_zd = gamma_d / 2 + self.rho_d[i] / 2 * x
+                    zd = self.CG_solver(self.LHS_zd, RHS_zd, zd, i, self.alpha_zd, self.beta_zd)
+                    assert not torch.isnan(RHS_zd).any(), f'RHS_zd has NaN value in loop {i}'
+                    assert not torch.isinf(RHS_zd).any() and not torch.isinf(-RHS_zd).any(), f'RHS_zd has inf value in loop {i}'
 
                 gamma_u = gamma_u + self.rho_u[i] * (x - zu)
-                gamma_d = gamma_d + self.rho_d[i] * (x - zd)
+                if self.ablation != 'DGTV':
+                    gamma_d = gamma_d + self.rho_d[i] * (x - zd)
             # udpata phi
             # phi = self.Phi_PGD(phi, x, gamma, i) # 
             if self.ablation == 'None':

@@ -286,11 +286,14 @@ for epoch in range(num_epochs):
     logger.info('multiQ1, multiQ2, multiM: %f, %f, %f', glm.multiQ1.max().item(), glm.multiQ2.max().item(), glm.multiM.max().item())
     if args.ablation in ['None', 'DGLR']:
         logger.info('rho: %f', admm_block.rho.max().item())
-    logger.info('rho_u, rho_d: %f, %f', admm_block.rho_u.max().item(), admm_block.rho_d.max().item())
-    logger.info('max alphas, %.4f, %.4f, %.4f', admm_block.alpha_x.max().item(), admm_block.alpha_zu.max().item(), admm_block.alpha_zd.max().item())
-    logger.info('min alphas, %.4f, %.4f, %.4f', admm_block.alpha_x.min().item(), admm_block.alpha_zu.min().item(), admm_block.alpha_zd.min().item())
-    logger.info('max betas, %.4f, %.4f, %.4f', admm_block.beta_x.max().item(), admm_block.beta_zu.max().item(), admm_block.beta_zd.max().item())
-    logger.info('min betas, %.4f, %.4f, %.4f', admm_block.beta_x.min().item(), admm_block.beta_zu.min().item(), admm_block.beta_zd.min().item())
+    logger.info('rho_u: %f', admm_block.rho_u.max().item())
+    if args.ablation != 'DGLR':
+        logger.info('rho_d: %f', admm_block.rho_d.max().item())
+
+    logger.info('alpha_x, (%.4f, %.4f), beta_x (%.4f, %.4f)', admm_block.alpha_x.min().item(), admm_block.alpha_x.max().item(), admm_block.beta_x.min().item(), admm_block.beta_x.max().item())
+    logger.info('alpha_zu, (%.4f, %.4f), beta_zu (%.4f, %.4f)', admm_block.alpha_zu.min().item(), admm_block.alpha_zu.max().item(), admm_block.beta_zu.min().item(), admm_block.beta_zu.max().item())
+    if args.ablation != 'DGLR':
+    logger.info('alpha_zd, (%.4f, %.4f), beta_zd (%.4f, %.4f)', admm_block.alpha_zd.min().item(), admm_block.alpha_zd.max().item(), admm_block.beta_zd.min().item(), admm_block.beta_zd.max().item())
 
     # validation
     if (epoch + 1) % 5 == 0:
