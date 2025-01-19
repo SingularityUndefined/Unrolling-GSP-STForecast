@@ -186,30 +186,33 @@ class UnrollingModel(nn.Module):
         
         return torch.Tensor(x_norm_list), torch.Tensor(x_Lu_norm_list), torch.Tensor(Ldx_l1_list), torch.Tensor(Ldx_l2_list) # in (n_blocks, B)
     
-    def clamp_param(self, alpha_max, beta_max):
+    def clamp_param(self, alpha_max=None, beta_max=None):
         for i in range(self.num_blocks):
             transformer_block = self.model_blocks[i]
-            graph_learn:GraphLearningModule = transformer_block['graph_learning_module']
-            # graph_learn.multiM.data = torch.clamp(graph_learn.multiM.data, 0.0)
-            # graph_learn.multiQ1.data = torch.clamp(graph_learn.multiQ1.data, 0.0)
-            # graph_learn.multiQ2.data = torch.clamp(graph_learn.multiQ2.data, 0.0)
-            # print data
-            admm_block:ADMMBlock = transformer_block['ADMM_block']
+            graph_learn: GraphLearningModule = transformer_block['graph_learning_module']
+            admm_block: ADMMBlock = transformer_block['ADMM_block']
 
-            # print('max alpha (x, zu, zd)', admm_block.alpha_x.data.max(), admm_block.alpha_zu.data.max(), admm_block.alpha_zd.data.max())
-            # # print('min alpha (x, zu, zd)', admm_block.alpha_x.data.min(), admm_block.alpha_zu.data.min(), admm_block.alpha_zd.data.min())
-            # print('max beta (x, zu, zd)', admm_block.beta_x.data.max(), admm_block.beta_zu.data.max(), admm_block.beta_zd.data.max())
-            # # print('max beta (x, zu, zd)', admm_block.beta_x.data.min(), admm_block.beta_zu.data.min(), admm_block.beta_zd.data.min())
+            if alpha_max is not None:
+                admm_block.alpha_x.data = torch.clamp(admm_block.alpha_x.data, 0.0, alpha_max)
+                admm_block.alpha_zu.data = torch.clamp(admm_block.alpha_zu.data, 0.0, alpha_max)
+                if self.ablation != 'DGLR':
+                    admm_block.alpha_zd.data = torch.clamp(admm_block.alpha_zd.data, 0.0, alpha_max)
+            else:
+                admm_block.alpha_x.data = torch.clamp(admm_block.alpha_x.data, 0.0)
+                admm_block.alpha_zu.data = torch.clamp(admm_block.alpha_zu.data, 0.0)
+                if self.ablation != 'DGLR':
+                    admm_block.alpha_zd.data = torch.clamp(admm_block.alpha_zd.data, 0.0)
 
-            admm_block.alpha_x.data = torch.clamp(admm_block.alpha_x.data, 0.0, alpha_max)
-            admm_block.beta_x.data = torch.clamp(admm_block.beta_x.data, 0.0, beta_max)
-            admm_block.alpha_zu.data = torch.clamp(admm_block.alpha_zu.data, 0.0, alpha_max)
-            admm_block.beta_zu.data = torch.clamp(admm_block.beta_zu.data, 0.0, beta_max)
-            if self.ablation != 'DGLR':
-                admm_block.alpha_zd.data = torch.clamp(admm_block.alpha_zd.data, 0.0, alpha_max)
-                admm_block.beta_zd.data = torch.clamp(admm_block.beta_zd.data, 0.0, beta_max)
-
-            #W admm_block.epsilon.data = torch.clamp(admm_block.epsilon.data, 0.0, 0.2)
+            if beta_max is not None:
+                admm_block.beta_x.data = torch.clamp(admm_block.beta_x.data, 0.0, beta_max)
+                admm_block.beta_zu.data = torch.clamp(admm_block.beta_zu.data, 0.0, beta_max)
+                if self.ablation != 'DGLR':
+                    admm_block.beta_zd.data = torch.clamp(admm_block.beta_zd.data, 0.0, beta_max)
+            else:
+                admm_block.beta_x.data = torch.clamp(admm_block.beta_x.data, 0.0)
+                admm_block.beta_zu.data = torch.clamp(admm_block.beta_zu.data, 0.0)
+                if self.ablation != 'DGLR':
+                    admm_block.beta_zd.data = torch.clamp(admm_block.beta_zd.data, 0.0)
 
 
     def forward(self, y, t_list):

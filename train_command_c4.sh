@@ -4,11 +4,11 @@ pip install torch tqdm numpy matplotlib networkx pandas
 # 定义要执行的命令
 commands=(
     # "python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 1e-3  --stepsize 10 --epoch 50 --optim adam"
-    "python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 1e-3  --stepsize 10 --epoch 50 --clamp 0.5"
-    "python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 1e-3  --stepsize 10 --epoch 50 --clamp 0.8"
-    "python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 1e-3  --stepsize 10 --epoch 50 --clamp -1"
-    "python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 1e-3  --stepsize 5 --epoch 50 --clamp 0.5"
-    "python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 1e-3  --stepsize 10 --epoch 50 --clamp 0.5 --optim adam"
+    "python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 1e-3  --stepsize 10 --epoch 50 --clamp 0.5 --extrapolation"
+    "python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 1e-3  --stepsize 10 --epoch 50 --clamp 0.8 --extrapolation"
+    "python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 1e-3  --stepsize 10 --epoch 50 --clamp -1   --extrapolation"
+    "python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 1e-3  --stepsize 5 --epoch 50 --clamp 0.5 --extrapolation"
+    "python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 1e-3  --stepsize 10 --epoch 50 --clamp 0.5 --optim adam --extrapolation"
     # "python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 5e-4  --stepsize 10 --epoch 50 --"
     # "python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 1e-4  --stepsize 10 --epoch 50"
     # "python train.py --dataset PEMS07 --hop 4 --batchsize 4  --loggrad 10 --cuda 0 --lr 1e-4  --stepsize 8 --epoch 50 --seed 42"

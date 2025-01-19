@@ -27,7 +27,7 @@ parser.add_argument('--debug', dest='debug', help='if debug, save model every it
 parser.set_defaults(debug=False)
 parser.add_argument('--optim', help='optimizer', default='adamw', type=str)
 parser.add_argument('--mode', help='normalization mode', default='normalize', type=str)
-parser.add_argument('--ablation', dest='ablation', default='None', type=str)#action='store_true', help='run ablation model') 
+parser.add_argument('--ablation', help='operator to elimnate in ablation study', default='None', type=str)#action='store_true', help='run ablation model')
 parser.add_argument('--stepsize', help='stepLR stepsize', default=8, type=int)
 parser.add_argument('--gamma', help='stepLR gamma', default=0.2, type=float)
 # parser.set_defaults(ablation=False)
@@ -37,8 +37,11 @@ parser.add_argument('--loggrad', help='log gradient norms', default=20, type=int
 parser.add_argument('--epochs', help='running epochs', default=30, type=int)
 
 parser.add_argument('--clamp', help='clamp parameter', default=0.20, type=float)
-parser.add_argument('--extrapolation', help='use extrapolation', action='store_true', default=False)
+parser.add_argument('--loss', help='loss function', default='MSE', type=str)
+parser.add_argument('--extrapolation', help='use extrapolation', action='store_true')#, default=False)
 parser.set_defaults(extrapolation=False)
+parser.add_argument('--stepLR', dest='use_stepLR', action='store_true')
+parser.set_defaults(use_stepLR=False)
 args = parser.parse_args()
 
 seed_everything(args.seed)
@@ -50,7 +53,7 @@ num_epochs = args.epochs
 num_workers = 4
 
 # load datasets
-loss_name = 'MSE'
+loss_name = args.loss
 
 if loss_name == 'MSE':
     loss_fn = nn.MSELoss()
@@ -84,7 +87,9 @@ k_hop = args.hop
 dataset_dir = '../datasets/PEMS0X_data/'
 experiment_name = f'{k_hop}_hop_concatFE_{args.tin}_{args.tout}_seed{args.seed}'
 if args.ablation != 'None':
-    experiment_name = 'wo_{args.ablation}' + experiment_name
+    experiment_name = f'wo_{args.ablation}' + experiment_name
+if not args.extrapolation:
+    experiment_name = 'LR_' + experiment_name
 dataset_name = args.dataset
 T = args.tin + args.tout
 t_in = args.tin
@@ -133,7 +138,8 @@ if args.optim == 'adam':
 elif args.optim == 'adamw':
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-2)
 
-scheduler = lr_scheduler.StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
+if args.use_stepLR:
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
 
 # 创建文件处理器
 log_dir = f'../JanModified/logs_midparam/{experiment_name}'
@@ -142,7 +148,7 @@ log_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_
 
 logger = setup_logger('logger1', os.path.join(log_dir, log_filename), logging.DEBUG, to_console=True)
 if args.loggrad:
-    grad_logger_dir = f'../JanModified/grad_logs_midparam/{experiment_name}'
+    grad_logger_dir = f'../JanModified/new_grad_logs_midparam/{experiment_name}'
     os.makedirs(grad_logger_dir, exist_ok=True)
     grad_logger = setup_logger('logger2', os.path.join(grad_logger_dir, log_filename), logging.INFO, to_console=False)
 
@@ -152,22 +158,22 @@ print('log dir', log_dir)
 logger.info('#################################################')
 logger.info('PARAMETER SETTINGS:')
 for arg, value in vars(args).items():
-    logger.info(f"{arg}: {value}")
+    logger.info("%s: %s", arg, value)
 logger.info('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
 total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-logger.info(f'pretrained path: {model_pretrained_path}')
+logger.info('pretrained path: %s', model_pretrained_path)
 # logger.info(f'learning k hop: {k_hop}')
-logger.info(f'feature channels: {feature_channels}')
+logger.info('feature channels: %d', feature_channels)
 # logger.info(f'graph sigma: {graph_sigma}')
 # logger.info(f'batch size: {batch_size}')
 # logger.info(f'learning rate: {learning_rate}')
-logger.info(f'Loss function: {loss_name}')
-logger.info(f"Total parameters: {total_params}")
+logger.info('Loss function: %s', loss_name)
+logger.info("Total parameters: %d", total_params)
 # logger.info(f'device: {device}')
 logger.info('PARAMTER SETTINGS:')
-logger.info(f'ADMM blocks: {num_admm_blocks}')
-logger.info(f'ADMM info: {ADMM_info}')
-logger.info(f'graph info: nodes {train_set.n_nodes}, edges {train_set.n_edges}, signal channels {signal_channels}')
+logger.info('ADMM blocks: %d', num_admm_blocks)
+logger.info('ADMM info: %s', ADMM_info)
+logger.info('graph info: nodes %d, edges %d, signal channels %d', train_set.n_nodes, train_set.n_edges, signal_channels)
 logger.info('--------BEGIN TRAINING PROCESS------------')
 
 grad_logger.info('------BEGIN TRAINING PROCESS-------')
@@ -233,6 +239,8 @@ for epoch in range(num_epochs):
         
         if args.clamp > 0:
             model.clamp_param(args.clamp, args.clamp)
+        elif args.clamp == 0:
+            model.clamp_param()
         if args.debug:
             torch.save(model.state_dict(), debug_model_path)
         # loggers
@@ -258,8 +266,8 @@ for epoch in range(num_epochs):
         admm_block = model.model_blocks[0]['ADMM_block']
         # break
     
-    logger.info(f'output: ({output.max().item()}, {output.min().item()})')
-
+    logger.info('output: (%f, %f)', output.max().item(), output.min().item())
+    print_gradients(model)
     total_loss = running_loss / len(train_loader)
     train_loss_list.append(total_loss)
     nearest_rmse = math.sqrt(nearest_loss / len(train_loader))
@@ -274,15 +282,15 @@ for epoch in range(num_epochs):
         'pred_MAPE(%)': pred_mape 
     }
 
-    logger.info(f'Training: Epoch [{epoch + 1}/{num_epochs}], Loss:{total_loss:.4f}, rec_RMSE: {rec_rmse:.4f}, RMSE_next:{nearest_rmse:.4f}, RMSE:{pred_rmse:.4f}, MAE:{pred_mae:.4f}, MAPE(%):{pred_mape:.4f}')
-    logger.info(f'multiQ1, multiQ2, multiM: {glm.multiQ1.max().item()}, {glm.multiQ2.max().item()}, {glm.multiM.max().item()}')
-    if not args.ablation:
-        logger.info(f'rho: {admm_block.rho.max().item()}')
-    logger.info(f'rho_u, rho_d: {admm_block.rho_u.max().item()}, {admm_block.rho_d.max().item()}')
-    logger.info(f'max alphas, {admm_block.alpha_x.max().item():.4f}, {admm_block.alpha_zu.max().item():.4f}, {admm_block.alpha_zd.max().item():.4f}')
-    logger.info(f'min alphas, {admm_block.alpha_x.min().item():.4f}, {admm_block.alpha_zu.min().item():.4f}, {admm_block.alpha_zd.min().item():.4f}')
-    logger.info(f'max betas, {admm_block.beta_x.max().item():.4f}, {admm_block.beta_zu.max().item():.4f}, {admm_block.beta_zd.max().item():.4f}')
-    logger.info(f'min betas, {admm_block.beta_x.min().item():.4f}, {admm_block.beta_zu.min().item():.4f}, {admm_block.beta_zd.min().item():.4f}')
+    logger.info('Training: Epoch [%d/%d], Loss:%.4f, rec_RMSE: %.4f, RMSE_next:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', epoch + 1, num_epochs, total_loss, rec_rmse, nearest_rmse, pred_rmse, pred_mae, pred_mape)
+    logger.info('multiQ1, multiQ2, multiM: %f, %f, %f', glm.multiQ1.max().item(), glm.multiQ2.max().item(), glm.multiM.max().item())
+    if args.ablation in ['None', 'DGLR']:
+        logger.info('rho: %f', admm_block.rho.max().item())
+    logger.info('rho_u, rho_d: %f, %f', admm_block.rho_u.max().item(), admm_block.rho_d.max().item())
+    logger.info('max alphas, %.4f, %.4f, %.4f', admm_block.alpha_x.max().item(), admm_block.alpha_zu.max().item(), admm_block.alpha_zd.max().item())
+    logger.info('min alphas, %.4f, %.4f, %.4f', admm_block.alpha_x.min().item(), admm_block.alpha_zu.min().item(), admm_block.alpha_zd.min().item())
+    logger.info('max betas, %.4f, %.4f, %.4f', admm_block.beta_x.max().item(), admm_block.beta_zu.max().item(), admm_block.beta_zd.max().item())
+    logger.info('min betas, %.4f, %.4f, %.4f', admm_block.beta_x.min().item(), admm_block.beta_zu.min().item(), admm_block.beta_zd.min().item())
 
     # validation
     if (epoch + 1) % 5 == 0:
@@ -342,7 +350,7 @@ for epoch in range(num_epochs):
             'pred_MAPE(%)': pred_mape 
         }
         
-        logger.info(f'Validation: Epoch [{epoch + 1}/{num_epochs}], Loss:{total_loss:.4f}, rec_RMSE:{rec_rmse:.4f} RMSE_next:{nearest_rmse:.4f}, RMSE:{pred_rmse:.4f}, MAE:{pred_mae:.4f}, MAPE(%):{pred_mape:.4f}')
+        logger.info('Validation: Epoch [%d/%d], Loss:%.4f, rec_RMSE:%.4f RMSE_next:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', epoch + 1, num_epochs, total_loss, rec_rmse, nearest_rmse, pred_rmse, pred_mae, pred_mape)
         # save models
         torch.save(model, os.path.join(model_dir, f'val_{epoch+1}.pth'))
 

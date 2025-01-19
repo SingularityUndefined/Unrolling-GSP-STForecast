@@ -119,16 +119,26 @@ def plot_loss_curve(train_loss, val_loss, save_path, val_freq=5):
 
 def log_gradients(epoch, num_epochs, iteration_count, train_loader, model, grad_logger, args):
     if (iteration_count + 1) % args.loggrad == 0:
-        grad_logger.info(f'[Epoch {epoch}, Iter {iteration_count}/{len(train_loader)}]')
+        grad_logger.info(f'[Epoch {epoch}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]')
     if (iteration_count + 1) % 60 == 0 and args.debug:
         print(f'[Epoch {epoch}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]')
+
     for name, param in model.named_parameters():
         if 'agg' in name and 'weight' in name:
-            grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
+            if (iteration_count + 1) % args.loggrad == 0:
+                grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
             if (iteration_count + 1) % 60 == 0 and args.debug:
                 print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
-                
-        if model.use_old_extrapolation and 'linear_extrapolation' in name:
-            grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
+
+        if model.use_extrapolation and model.use_old_extrapolation and 'linear_extrapolation' in name:
+            if (iteration_count + 1) % args.loggrad == 0:
+                grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
             if (iteration_count + 1) % 60 == 0 and args.debug:
                 print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
+
+def print_gradients(model):
+    for name, param in model.named_parameters():
+        if 'agg' in name and 'weight' in name:
+            print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
+        if model.use_extrapolation and model.use_old_extrapolation and 'linear_extrapolation' in name:
+            print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')

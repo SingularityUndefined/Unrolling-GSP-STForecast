@@ -110,10 +110,10 @@ class ADMMBlock(nn.Module):
         B, T = x.size(0), x.size(1)
         pad_x = torch.zeros_like(x[:,:,0], device=self.device).unsqueeze(2)
         pad_x = torch.cat((x, pad_x), dim=2)
-        ##### CHANGE HERE##############################################
+
+        ##### CHANGED HERE##############################################
         holder = self.d_ew.unsqueeze(-1) * x[:,1:].unsqueeze(3) # in (B, T-1, N, k, n_heads, n_channels)
         in_features = torch.zeros((B, T-1, self.n_nodes + 1, self.n_heads, self.n_channels), device=self.device)
-        # print(self.nearest_nodes.view(-1).unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).repeat(B, T-1, 1, self.n_heads, self.n_channels).size(), holder.view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels).size())
         index = self.nearest_nodes.reshape(-1).unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).repeat(B, T-1, 1, self.n_heads, self.n_channels)
         index[index == -1] = self.n_nodes
 
@@ -125,7 +125,7 @@ class ADMMBlock(nn.Module):
         ############### ORIGINAL Version ###############
         # in_features = (self.d_ew.unsqueeze(-1) * pad_x[:, 1:, self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3) # in (B, T-1, N, n_heads, n_channels)
  ####################################
-        y = x
+        y = x.clone()
         y[:,0] = torch.zeros_like(x[:,0])
         y[:,:-1] = y[:,:-1] - in_features
         return y
