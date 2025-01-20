@@ -251,12 +251,12 @@ class UnrollingModel(nn.Module):
             try:
                 features = feature_extractor(output_emb) # in (batch, T, n_nodes, n_heads, n_out)
             except ValueError as ae:
-                raise ValueError(f'Error in Feature extractor in Block {i}: {ae}')
+                raise ValueError(f'Error in Feature extractor in Block {i}: {ae}') from ae
             # print('features', features.size())
             try:
                 u_ew, d_ew = graph_learn(features)
             except AssertionError as ae:
-                raise ValueError(f'Error in Graph Learning Module in Block {i}: {ae}')
+                raise ValueError(f'Error in Graph Learning Module in Block {i}: {ae}') from ae
             # print('max in weights', get_max_in_dict(u_ew), get_max_in_dict(d_ew))
             # print('u_ew', u_ew[0].shape)
             # print('d_ew', d_ew[0].shape)
@@ -266,7 +266,7 @@ class UnrollingModel(nn.Module):
                 output_new = admm_block(output, t) # in (batch, T, n_nodes, signal_channels)
             # skip connections
             except AssertionError as ae:
-                raise ValueError(f'Assertation Error in ADMM block in block {i} - {ae}')
+                raise ValueError(f'Assertation Error in ADMM block in block {i} - {ae}') from ae
             assert not torch.isnan(output_new).any(), f'output_new has NaN value in block {i}'
             p = self.skip_connection_weights[i]
             assert not torch.isnan(self.skip_connection_weights).any(), f'skip connection has NaN Values in block {i}'

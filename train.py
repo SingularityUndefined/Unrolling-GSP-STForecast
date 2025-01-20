@@ -10,6 +10,7 @@ import math
 from utils import *
 import argparse
 from collections import Counter
+import sys
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--cuda', help='CUDA device', type=int)
@@ -156,6 +157,7 @@ debug_model_path = os.path.join(f'../JanModified/debug_models_midparam/{experime
 
 print('log dir', log_dir)
 logger.info('#################################################')
+print(" ".join(sys.argv))
 logger.info('PARAMETER SETTINGS:')
 for arg, value in vars(args).items():
     logger.info("%s: %s", arg, value)
@@ -217,8 +219,9 @@ for epoch in range(num_epochs):
             # plot the loss curve from loss_list
             # plot_loss_curve(loss_list, log_dir)
             plot_loss_curve(train_loss_list, val_loss_list, plot_path)
-            logger.error(f'Error in [Epoch {epoch}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}')
-            grad_logger.error(f'Error in [Epoch {epoch}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}')
+            logger.error(f'Error in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}')
+            grad_logger.error(f'Error in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}')
+            raise ValueError(f'Error in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}') from ve
         # except AssertionError as ae:
            #  print(f'Error in [Epoch {epoch}, Iter {iteration_count}] - {ae}')
         output = data_normalization.recover_data(output)
@@ -231,6 +234,11 @@ for epoch in range(num_epochs):
         if masked_flag:
             x, output = x[:,t_in:], output[:,t_in:]
         loss = loss_fn(output, x)
+
+        if torch.isnan(loss).any():
+            logger.error(f'Loss is NaN in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]')
+            raise ValueError(f'Loss is NaN in [Epoch {epoch}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]')
+        
         loss.backward()       
         optimizer.step()
         iteration_count += 1

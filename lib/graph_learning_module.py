@@ -46,7 +46,7 @@ class GNNExtrapolation(nn.Module):
         try:
             agg, _ = gcn_aggregation(x, self.nearest_nodes, self.nearest_dists, self.n_heads, self.device, self.sigma) # in (B, t_in, N, n_heads, n_channels)
         except AssertionError as ae:
-            raise ValueError('Error in GNNExtrapolation Layer - {ae}')
+            raise ValueError('Error in GNNExtrapolation Layer - {ae}') from ae
         assert not torch.isnan(agg).any(), 'extrapolation agg has NaN value'
         agg = agg.permute(0,2,4,1,3).reshape(B, n_nodes, n_channels, -1) # in (B, N, n_channels, t_in * n_heads)
         assert not torch.isnan(self.shrink.weight).any(), 'GNN extrapolation self.shrink has NaN value'
@@ -88,12 +88,12 @@ class GALExtrapolation(nn.Module):
         try:
             agg = self.agg_layer(x)
         except AssertionError as ae:
-            raise ValueError(f'Error in GALExtrapolation:input_layer - {ae}')
+            raise ValueError(f'Error in GALExtrapolation:input_layer - {ae}') from ae
         if self.n_layers > 1:
             try:
                 agg = self.GNN(agg)
             except AssertionError as ae:
-                raise ValueError(f'Error in GALExtrapolation:GNN - {ae}')
+                raise ValueError(f'Error in GALExtrapolation:GNN - {ae}') from ae
         
         agg = agg.permute(0,2,4,1,3).reshape(B, n_nodes, n_channels, -1) # in (B, N, n_channels, t_in * n_heads)
         y = self.shrink(agg).permute(0,3,1,2)
@@ -434,7 +434,7 @@ class FeatureExtractor(nn.Module):
         try:
             out = self.input_layer(x)
         except AssertionError as ae:
-            raise ValueError(f'Error in input layer - {ae}')
+            raise ValueError(f'Error in input layer - {ae}') from ae
         assert not torch.isnan(out).any(), 'GAL Feature Extractor 1st layer NaN' 
     # print('GCN 1:', out.size())
         if self.n_layers == 1:
@@ -443,7 +443,7 @@ class FeatureExtractor(nn.Module):
             try:
                 y = self.GNN(out)
             except AssertionError as ae:
-                raise ValueError('Error in Following layer - {ae}')
+                raise ValueError('Error in Following layer - {ae}') from ae
             return y
         # else:
         #     return self.nn(x.unsqueeze(-1)).transpose(-1, -2) # in (B, T, N, n_nodes, n_in)

@@ -1,0 +1,24 @@
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 8  --loggrad 10 --cuda 1 --lr 1e-3  --stepsize 10 --epoch 50 --clamp 0.5 --ablation DGTV --extrapolation
+Status: Failed
+Duration: 14532s
+-----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 8  --loggrad 8 --cuda 0 --lr 1e-3  --stepsize 10 --epoch 50 --clamp 0.8 --ablation DGLR --extrapolation
+Status: Failed
+Duration: 10625s
+-----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 8  --loggrad 8 --cuda 0 --lr 1e-3  --stepsize 10 --epoch 50 --clamp 0 --ablation DGLR --extrapolation
+Status: Failed
+Duration: 9639s
+-----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 8  --loggrad 8 --cuda 0 --lr 1e-3  --stepsize 10 --epoch 50 --clamp -1 --ablation DGLR --extrapolation
+Status: Failed
+Duration: 8346s
+-----------------------------
+Command: python train.py --dataset PEMS07 --hop 4 --batchsize 8  --loggrad 8 --cuda 0 --lr 1e-3  --stepsize 10 --epoch 50 --clamp 0.5 --ablation DGTV --extrapolation
+Status: Failed
+Duration: 284s
+-----------------------------
+Command: python train.py --dataset PEMS07 --hop 4 --batchsize 6  --loggrad 8 --cuda 0 --lr 1e-3  --stepsize 10 --epoch 50 --clamp 0.5 --ablation DGLR --extrapolation
+Status: Failed
+Duration: 490s
+-----------------------------
