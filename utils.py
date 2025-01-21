@@ -20,7 +20,7 @@ def seed_everything(seed=11):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=False):
+def create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time):# , use_one_channel=False):
     data_folder = os.path.join(dataset_dir, dataset_name)
     graph_csv = dataset_name + '.csv'
     data_file = dataset_name + '.npz'
@@ -29,9 +29,9 @@ def create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, nu
     else:
         id_file = None
 
-    train_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'train', id_file=id_file, return_time=return_time, use_one_channel=use_one_channel)
-    val_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'val', id_file=id_file, return_time=return_time, use_one_channel=use_one_channel)
-    test_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'test', id_file=id_file, return_time=return_time, use_one_channel=use_one_channel)
+    train_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'train', id_file=id_file, return_time=return_time)# , use_one_channel=use_one_channel)
+    val_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'val', id_file=id_file, return_time=return_time)# , use_one_channel=use_one_channel)
+    test_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'test', id_file=id_file, return_time=return_time)# , use_one_channel=use_one_channel)
 
     train_loader = DataLoader(train_set, batch_size, shuffle=True, num_workers=num_workers)
     val_loader = DataLoader(val_set, batch_size, shuffle=False, num_workers=num_workers)
@@ -162,18 +162,18 @@ def change_model_location(model_path, device):
     return model
 
 
-def test(model, val_loader, data_normalization, masked_flag, logger, args, device, signal_channels, mode='test', loss_fn=None):
+def test(model, val_loader, data_normalization, masked_flag, logger, args, device, signal_channels, mode='test', loss_fn=None, use_one_channel=False):
     model.eval()
     with torch.no_grad():
         rec_mse = 0
         pred_mse = 0
         pred_mape = 0
         pred_mae = 0
-
-        rec_mse_d = np.zeros((signal_channels,))# .to(device)
-        pred_mse_d = np.zeros((signal_channels,))# .to(device)
-        pred_mape_d = np.zeros((signal_channels,))# .to(device)
-        pred_mae_d = np.zeros((signal_channels,))# .to(device)
+        if not use_one_channel:
+            rec_mse_d = np.zeros((signal_channels,))# .to(device)
+            pred_mse_d = np.zeros((signal_channels,))# .to(device)
+            pred_mape_d = np.zeros((signal_channels,))# .to(device)
+            pred_mae_d = np.zeros((signal_channels,))# .to(device)
 
         if mode == 'val':
             running_loss = 0
@@ -215,11 +215,12 @@ def test(model, val_loader, data_normalization, masked_flag, logger, args, devic
                 pred_mae += (torch.abs(output_pred - x_pred)).mean().item()
                 pred_mape += (torch.abs(output_pred[mask] - x_pred[mask]) / x_pred[mask]).mean().item() * 100
 
-                pred_mse_d += ((x_pred - output_pred) ** 2).mean((0,1,2)).cpu().numpy()
-                pred_mae_d += (torch.abs(output_pred - x_pred)).mean((0,1,2)).cpu().numpy()
-                for i in range(signal_channels):
-                    mask_i = x_pred[:,:,:,i] > 1e-8
-                    pred_mape_d[i] += (torch.abs(output_pred[:,:,:,i][mask_i] - x_pred[:,:,:,i][mask_i]) / x_pred[:,:,:,i][mask_i]).mean().item() * 100
+                if not use_one_channel:
+                    pred_mse_d += ((x_pred - output_pred) ** 2).mean((0,1,2)).cpu().numpy()
+                    pred_mae_d += (torch.abs(output_pred - x_pred)).mean((0,1,2)).cpu().numpy()
+                    for i in range(signal_channels):
+                        mask_i = x_pred[:,:,:,i] > 1e-8
+                        pred_mape_d[i] += (torch.abs(output_pred[:,:,:,i][mask_i] - x_pred[:,:,:,i][mask_i]) / x_pred[:,:,:,i][mask_i]).mean().item() * 100
             # break
 
     rec_rmse = math.sqrt(rec_mse / len(val_loader))
@@ -227,10 +228,11 @@ def test(model, val_loader, data_normalization, masked_flag, logger, args, devic
     pred_mae = pred_mae / len(val_loader)
     pred_mape = pred_mape / len(val_loader)
 
-    rec_rmse_d = np.sqrt(rec_mse_d / len(val_loader))
-    pred_mse_d = np.sqrt(pred_mse_d / len(val_loader))
-    pred_mae_d = pred_mae_d / len(val_loader)
-    pred_mape_d = pred_mape_d / len(val_loader)
+    if not use_one_channel:
+        rec_rmse_d = np.sqrt(rec_mse_d / len(val_loader))
+        pred_mse_d = np.sqrt(pred_mse_d / len(val_loader))
+        pred_mae_d = pred_mae_d / len(val_loader)
+        pred_mape_d = pred_mape_d / len(val_loader)
 
     if mode == 'val':
         running_loss /= len(val_loader)
@@ -242,15 +244,22 @@ def test(model, val_loader, data_normalization, masked_flag, logger, args, devic
         'pred_MAPE': pred_mape 
     }
 
-    metrics_d = {
-        'rec_RMSE': rec_rmse_d,
-        'pred_RMSE': pred_mse_d,
-        'pred_MAE': pred_mae_d,
-        'pred_MAPE': pred_mape_d 
-    }
+    if not use_one_channel:
+        metrics_d = {
+            'rec_RMSE': rec_rmse_d,
+            'pred_RMSE': pred_mse_d,
+            'pred_MAE': pred_mae_d,
+            'pred_MAPE': pred_mape_d 
+        }
 
     if mode == 'val':
-        return running_loss, metrics, metrics_d
+        if not use_one_channel:
+            return running_loss, metrics, metrics_d
+        else:
+            return running_loss, metrics
     elif mode == 'test':
-        return metrics, metrics_d
+        if not use_one_channel:
+            return metrics, metrics_d
+        else:
+            return metrics
     # return running_loss

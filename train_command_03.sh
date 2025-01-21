@@ -19,7 +19,7 @@ done
 # 更新commands中的cuda参数
 commands=(
     # lr = 1e-3
-    "$python_path train.py --dataset PEMS03 --hop 4 --batchsize 8  --loggrad 20 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber"
+    "$python_path train.py --dataset PEMS03 --hop 4 --batchsize 8  --loggrad 20 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --seed 42"
     "$python_path train.py --dataset PEMS03 --hop 4 --batchsize 14  --loggrad 10 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGTV"
     "$python_path train.py --dataset PEMS03 --hop 4 --batchsize 12  --loggrad 10 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR"
     # lr = 5e-4

@@ -54,7 +54,7 @@ def physical_graph(df, sensor_dict=None):
 
 
 class TrafficDataset(Dataset):
-    def __init__(self, data_folder, graph_csv, data_file, T, t, stride, split='train', n_nodes=None, id_file=None, return_time=False, use_one_channel=False) -> None:
+    def __init__(self, data_folder, graph_csv, data_file, T, t, stride, split='train', n_nodes=None, id_file=None, return_time=False): # , use_one_channel=False) -> None:
         '''
         train:val:test = 6:2:2
         Components:
@@ -72,9 +72,9 @@ class TrafficDataset(Dataset):
         self.stride = stride
         self.return_time = return_time
         data = np.load(os.path.join(data_folder, data_file))['data'] # (T, n_in)
-        self.use_one_channel = use_one_channel
-        if self.use_one_channel:
-            data = data[..., 0:1]
+        # self.use_one_channel = use_one_channel
+        # if self.use_one_channel:
+        #     data = data[..., 0:1]
         
         print('nan_count', len(data[np.isnan(data)]))
         # print('datashape', data.shape, data[0:2])

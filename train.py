@@ -102,8 +102,13 @@ stride = 3
 
 return_time = True
 
-train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=args.use_one_channel)
+train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time)
 signal_channels = train_set.signal_channel
+
+# if args.use_one_channel:
+#     signal_channels = 1
+
+signal_list = ['flow', 'occupancy', 'speed']
 
 print('signal channels', signal_channels)
 # data normalization
@@ -126,7 +131,7 @@ model_pretrained_path = None
 
 
 print('args.ablation', args.ablation)
-model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, use_extrapolation=args.extrapolation).to(device)
+model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, use_extrapolation=args.extrapolation, use_one_channel=args.use_one_channel).to(device)
 # 'UnrollingForecasting/MainExperiments/models/v2/PEMS04/direct_4b_4h_6f/val_15.pth'
 
 if model_pretrained_path is not None:
@@ -221,10 +226,16 @@ for epoch in range(num_epochs):
 
             plot_loss_curve(train_loss_list, val_loss_list, plot_path)
 
-            metrics, metrics_d = test(model, test_loader, data_normalization, False, logger, args, device, signal_channels)
+            if args.use_one_channel:
+                metrics, metrics_d = test(model, test_loader, data_normalization, False, logger, args, device, signal_channels)
+            else:
+                metrics = test(model, test_loader, data_normalization, False, logger, args, device, signal_channels)
+
             logger.info('Test (ALL): rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', metrics['rec_RMSE'], metrics['pred_RMSE'], metrics['pred_MAE'], metrics['pred_MAPE'])
-            for i, s in enumerate(['flow', 'occupancy', 'speed']):
-                logger.info('Test (%s): rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', s, metrics_d['rec_RMSE'][i], metrics_d['pred_RMSE'][i], metrics_d['pred_MAE'][i], metrics_d['pred_MAPE'][i])
+
+            if args.use_one_channel:
+                for i in range(signal_channels):
+                    logger.info('Test (%s): rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', signal_list[i], metrics_d['rec_RMSE'][i], metrics_d['pred_RMSE'][i], metrics_d['pred_MAE'][i], metrics_d['pred_MAPE'][i])
 
 
             raise ValueError(f'Error in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}') from ve
@@ -305,14 +316,18 @@ for epoch in range(num_epochs):
 
     # validation
     if (epoch + 1) % 5 == 0:
-        running_loss, metrics, metric_d = test(model, val_loader, data_normalization, masked_flag, logger, args, device, signal_channels, mode='val', loss_fn=loss_fn)
+        if not args.use_one_channel:
+            running_loss, metrics, metric_d = test(model, val_loader, data_normalization, masked_flag, logger, args, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=False)
+        else:
+            running_loss, metrics = test(model, val_loader, data_normalization, masked_flag, logger, args, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=True)
 
         val_loss_list.append(running_loss)
 
         logger.info('Validation: Epoch [%d/%d], Loss:%.4f, rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', epoch + 1, num_epochs, running_loss, metrics['rec_RMSE'], metrics['pred_RMSE'], metrics['pred_MAE'], metrics['pred_MAPE'])
 
-        for i, s in enumerate(['flow', 'occupancy', 'speed']):
-            logger.info('Channal %s:\t rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', s, metric_d['rec_RMSE'][i], metric_d['pred_RMSE'][i], metric_d['pred_MAE'][i], metric_d['pred_MAPE'][i])
+        if not args.use_one_channel:
+            for i in range(signal_channels):
+                logger.info('Channel %s:\t rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', signal_list[i], metric_d['rec_RMSE'][i], metric_d['pred_RMSE'][i], metric_d['pred_MAE'][i], metric_d['pred_MAPE'][i])
         # save models
         torch.save(model.state_dict(), os.path.join(model_dir, f'val_{epoch+1}.pth'))
 

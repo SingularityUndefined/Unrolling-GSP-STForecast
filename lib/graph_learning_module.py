@@ -163,6 +163,7 @@ class GraphAggregationLayer(nn.Module):
         Graph Aggregation Layer: from neighborhood (N, k) to (N, n_heads)
         '''
         super().__init__()
+        # print('agg n_in, n_out', n_in, n_out)
         self.nearest_nodes = nearest_nodes
         self.k = nearest_nodes.size(1) - 1
         self.n_nodes = nearest_nodes.size(0)
@@ -400,6 +401,7 @@ class FeatureExtractor(nn.Module):
     # def __init__(self, n_in, n_out, n_nodes, n_heads, nearest_nodes, nearest_dists, device, n_layers=3, sigma=6, alpha=0.2, use_dist_conv=False):
     def __init__(self, n_in, n_out, n_heads, nearest_nodes, device, n_layers=3, alpha=0.2, use_graph_agg=True, n_nodes=None, sigma_ratio=None, nearest_dist=None):
         super().__init__()
+        # print('n_in, nout', n_in, n_out)
         self.n_in = n_in
         self.n_out = n_out
         self.nearest_nodes = nearest_nodes

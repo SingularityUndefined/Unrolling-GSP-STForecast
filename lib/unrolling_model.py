@@ -43,7 +43,8 @@ class UnrollingModel(nn.Module):
                  # use_LR_guess=False,
                  extrapolation_agg_layers=2,
                  sigma_ratio=450,
-                 ablation='None'
+                 ablation='None',
+                 use_one_channel=False
                  ):
         super().__init__()
         self.num_blocks = num_blocks
@@ -53,6 +54,7 @@ class UnrollingModel(nn.Module):
         self.n_heads = n_heads
         self.use_norm = use_norm
         self.ablation = ablation
+        self.use_one_channel = use_one_channel
 
         # define a graph connection pattern
         self.kNN = None
@@ -71,7 +73,18 @@ class UnrollingModel(nn.Module):
             signal_emb_channels = signal_channels + st_emb_info['spatial_dim'] + st_emb_info['t_dim'] + st_emb_info['tid_dim'] + st_emb_info['diw_dim']
         else:
             signal_emb_channels = signal_channels
+        
+        if self.use_one_channel:
+            signal_rec_channels = 1
+            signal_rec_emb_channels = signal_emb_channels - signal_channels + 1
+        else:
+            signal_rec_channels = signal_channels
+            signal_rec_emb_channels = signal_emb_channels
 
+        print('signal_channels', signal_channels)
+        print('signal_emb_channels', signal_emb_channels)
+        print('signal_rec_channels', signal_rec_channels)
+        print('signal_rec_emb_channels', signal_rec_emb_channels)
         self.model_blocks = nn.ModuleList([])
 
         self.skip_connection_weights = Parameter(torch.ones((num_blocks,), device=self.device) * 0.95, requires_grad=True)
@@ -83,7 +96,7 @@ class UnrollingModel(nn.Module):
             self.model_blocks.append(nn.ModuleDict(
                 {
                     'feature_extractor': FeatureExtractor(
-                        n_in=signal_emb_channels,
+                        n_in=signal_emb_channels if i == 0 else signal_rec_emb_channels,
                         n_out=feature_channels,
                         # n_nodes=graph_info['n_nodes'],
                         n_heads=n_heads,
@@ -103,7 +116,7 @@ class UnrollingModel(nn.Module):
                         T=T,
                         n_nodes=graph_info['n_nodes'],
                         n_heads=n_heads,
-                        n_channels=signal_channels,
+                        n_channels=signal_rec_channels,
                         nearest_nodes=self.nearsest_nodes,
                         device=device,
                         ADMM_info=ADMM_info,
@@ -236,14 +249,20 @@ class UnrollingModel(nn.Module):
 
         assert not torch.isnan(output).any(), 'linear extrapolation has nan'
         # print('pad output', output.size(), output[:,:,-1].sum())
-        if self.use_st_emb:
-            # print('self.st_emb.device', self.st_emb.device)
-            output_emb = self.st_emb(output, t_list)
-        else:
-            output_emb = output
 
         for i in range(self.num_blocks):
-            output_old = output
+            # print('block', i)
+            if self.use_st_emb:
+            # print('self.st_emb.device', self.st_emb.device)
+                output_emb = self.st_emb(output, t_list)
+            else:
+                output_emb = output
+            # print('output_emb', output_emb.size())
+            if self.use_one_channel and i == 0:
+                output_old = output[...,0:1]
+            else:
+                output_old = output
+
             transformer_block = self.model_blocks[i]
             feature_extractor = transformer_block['feature_extractor']
             graph_learn = transformer_block['graph_learning_module']
@@ -264,7 +283,12 @@ class UnrollingModel(nn.Module):
             admm_block.u_ew = u_ew
             admm_block.d_ew = d_ew
             try:
-                output_new = admm_block(output, t) # in (batch, T, n_nodes, signal_channels)
+                if self.use_one_channel:
+                    output_new = admm_block(output[...,0:1], t)
+                else:
+                    output_new = admm_block(output, t)
+                # print('output_new', output_new.size())
+                # output_new = admm_block(output, t) # in (batch, T, n_nodes, signal_channels)
             # skip connections
             except AssertionError as ae:
                 raise ValueError(f'Assertation Error in ADMM block in block {i} - {ae}') from ae
@@ -272,6 +296,7 @@ class UnrollingModel(nn.Module):
             p = self.skip_connection_weights[i]
             assert not torch.isnan(self.skip_connection_weights).any(), f'skip connection has NaN Values in block {i}'
             output = p * output_new + (1-p) * output_old
+
         if self.use_norm:
             output = layer_recovery_on_data(output, self.norm_shape, mean, std)
         return output        # 
