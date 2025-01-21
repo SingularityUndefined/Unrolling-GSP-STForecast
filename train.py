@@ -43,6 +43,10 @@ parser.add_argument('--extrapolation', help='use extrapolation', action='store_t
 parser.set_defaults(extrapolation=False)
 parser.add_argument('--stepLR', dest='use_stepLR', action='store_true')
 parser.set_defaults(use_stepLR=False)
+
+parser.add_argument('--flow', help='flow channel', dest='use_one_channel', action='store_true')
+parser.set_defaults(use_one_channel=False)
+
 args = parser.parse_args()
 
 seed_everything(args.seed)
@@ -98,7 +102,7 @@ stride = 3
 
 return_time = True
 
-train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time)
+train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=args.use_one_channel)
 signal_channels = train_set.signal_channel
 
 print('signal channels', signal_channels)
@@ -212,15 +216,17 @@ for epoch in range(num_epochs):
         except ValueError as ve:
             # plot the loss curve from loss_list
             # plot_loss_curve(loss_list, log_dir)
-            metrics, metrics_d = test(model, test_loader, data_normalization, False, logger, args, device, signal_channels)
+            logger.error(f'Error in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}')
+            grad_logger.error(f'Error in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}')
 
+            plot_loss_curve(train_loss_list, val_loss_list, plot_path)
+
+            metrics, metrics_d = test(model, test_loader, data_normalization, False, logger, args, device, signal_channels)
             logger.info('Test (ALL): rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', metrics['rec_RMSE'], metrics['pred_RMSE'], metrics['pred_MAE'], metrics['pred_MAPE'])
             for i, s in enumerate(['flow', 'occupancy', 'speed']):
                 logger.info('Test (%s): rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', s, metrics_d['rec_RMSE'][i], metrics_d['pred_RMSE'][i], metrics_d['pred_MAE'][i], metrics_d['pred_MAPE'][i])
 
-            plot_loss_curve(train_loss_list, val_loss_list, plot_path)
-            logger.error(f'Error in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}')
-            grad_logger.error(f'Error in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}')
+
             raise ValueError(f'Error in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}') from ve
         # except AssertionError as ae:
            #  print(f'Error in [Epoch {epoch}, Iter {iteration_count}] - {ae}')

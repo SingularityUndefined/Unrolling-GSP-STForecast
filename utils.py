@@ -20,7 +20,7 @@ def seed_everything(seed=11):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time):
+def create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=False):
     data_folder = os.path.join(dataset_dir, dataset_name)
     graph_csv = dataset_name + '.csv'
     data_file = dataset_name + '.npz'
@@ -29,9 +29,9 @@ def create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, nu
     else:
         id_file = None
 
-    train_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'train', id_file=id_file, return_time=return_time)
-    val_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'val', id_file=id_file, return_time=return_time)
-    test_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'test', id_file=id_file, return_time=return_time)
+    train_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'train', id_file=id_file, return_time=return_time, use_one_channel=use_one_channel)
+    val_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'val', id_file=id_file, return_time=return_time, use_one_channel=use_one_channel)
+    test_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'test', id_file=id_file, return_time=return_time, use_one_channel=use_one_channel)
 
     train_loader = DataLoader(train_set, batch_size, shuffle=True, num_workers=num_workers)
     val_loader = DataLoader(val_set, batch_size, shuffle=False, num_workers=num_workers)
