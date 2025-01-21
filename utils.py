@@ -7,6 +7,9 @@ from dataloader import TrafficDataset
 import os
 import logging
 import matplotlib.pyplot as plt
+from tqdm import tqdm
+import math
+
 
 def seed_everything(seed=11):
     random.seed(seed)
@@ -144,3 +147,110 @@ def print_gradients(model):
             print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
         if model.use_extrapolation and model.use_old_extrapolation and 'linear_extrapolation' in name:
             print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
+
+def change_model_location(model_path, device):
+    model = torch.load(model_path, map_location=device).to(device)
+    for name, module in model.named_children():
+        if hasattr(module, 'device'):
+            print(f'Loaded module: {name}')
+            module.device = device
+        if name == 'model_blocks':
+            for block in module:
+                block['feature_extractor'].device = device
+                block['ADMM_block'].device = device
+                block['graph_learning_module'].device = device
+    return model
+
+
+def test(model, val_loader, data_normalization, masked_flag, logger, args, device, signal_channels, mode='test', loss_fn=None):
+    model.eval()
+    with torch.no_grad():
+        rec_mse = 0
+        pred_mse = 0
+        pred_mape = 0
+        pred_mae = 0
+
+        rec_mse_d = np.zeros((signal_channels,))# .to(device)
+        pred_mse_d = np.zeros((signal_channels,))# .to(device)
+        pred_mape_d = np.zeros((signal_channels,))# .to(device)
+        pred_mae_d = np.zeros((signal_channels,))# .to(device)
+
+        if mode == 'val':
+            running_loss = 0
+
+        for y, x, t_list in tqdm(val_loader):
+            y, x, t_list = y.to(device), x.to(device), t_list.to(device)
+
+            # y = (y - train_mean) / train_std
+            # y = (y - train_min) / (train_max - train_min)
+            y = data_normalization.normalize_data(y)
+            output = model(y, t_list)
+            output = data_normalization.recover_data(output)
+            if args.mode == 'normalize':
+                output = nn.ReLU()(output)
+            # output = output * (train_max - train_min) + train_min
+            # output = output * train_std + train_mean
+
+            rec_mse += ((x[:,:args.tin] - output[:,:args.tin]) ** 2).mean().item()
+            rec_mse_d += ((x[:,:args.tin] - output[:,:args.tin]) ** 2).mean((0,1,2)).cpu().numpy()# .item()
+            if masked_flag:
+                x, output = x[:,args.t_in:], output[:,args.tin:]
+            
+            if loss_fn is not None:
+                loss = loss_fn(output, x)
+                running_loss += loss.item()
+
+            
+            # x, output = x[:,:,:,1], output[:,:,:,1]
+            if masked_flag:
+                pred_mse += ((x - output) ** 2).mean().item()
+                pred_mae += (torch.abs(output - x)).mean().item()
+                mask = (x > 1e-8)
+                pred_mape += (torch.abs(output[mask] - x[mask]) / x[mask]).mean().item() * 100
+            else:
+                x_pred = x[:,args.tin:]
+                output_pred = output[:,args.tin:]
+                mask = x_pred > 1e-8
+                pred_mse += ((x_pred - output_pred) ** 2).mean().item()
+                pred_mae += (torch.abs(output_pred - x_pred)).mean().item()
+                pred_mape += (torch.abs(output_pred[mask] - x_pred[mask]) / x_pred[mask]).mean().item() * 100
+
+                pred_mse_d += ((x_pred - output_pred) ** 2).mean((0,1,2)).cpu().numpy()
+                pred_mae_d += (torch.abs(output_pred - x_pred)).mean((0,1,2)).cpu().numpy()
+                for i in range(signal_channels):
+                    mask_i = x_pred[:,:,:,i] > 1e-8
+                    pred_mape_d[i] += (torch.abs(output_pred[:,:,:,i][mask_i] - x_pred[:,:,:,i][mask_i]) / x_pred[:,:,:,i][mask_i]).mean().item() * 100
+            # break
+
+    rec_rmse = math.sqrt(rec_mse / len(val_loader))
+    pred_rmse = math.sqrt(pred_mse / len(val_loader))
+    pred_mae = pred_mae / len(val_loader)
+    pred_mape = pred_mape / len(val_loader)
+
+    rec_rmse_d = np.sqrt(rec_mse_d / len(val_loader))
+    pred_mse_d = np.sqrt(pred_mse_d / len(val_loader))
+    pred_mae_d = pred_mae_d / len(val_loader)
+    pred_mape_d = pred_mape_d / len(val_loader)
+
+    if mode == 'val':
+        running_loss /= len(val_loader)
+
+    metrics = {
+        'rec_RMSE': rec_rmse,
+        'pred_RMSE': pred_rmse,
+        'pred_MAE': pred_mae,
+        'pred_MAPE': pred_mape 
+    }
+
+    metrics_d = {
+        'rec_RMSE': rec_rmse_d,
+        'pred_RMSE': pred_mse_d,
+        'pred_MAE': pred_mae_d,
+        'pred_MAPE': pred_mape_d 
+    }
+
+    if mode == 'val':
+        return running_loss, metrics, metrics_d
+    elif mode == 'test':
+        return metrics, metrics_d
+    # return running_loss

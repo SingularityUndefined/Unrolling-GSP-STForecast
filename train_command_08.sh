@@ -20,9 +20,10 @@ done
 # TODO: Update the batchsize and loggrad parameters
 # 定义要执行的命令
 commands=(
-    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 10  --loggrad 20 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber"
-    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 10  --loggrad 20 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGTV"
-    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 10  --loggrad 20 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR"
+    # todo: Needs to lower learning rate for main experiments
+    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 6  --loggrad 20 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber"
+    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 6  --loggrad 20 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGTV"
+    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 8  --loggrad 20 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR"
 )
 
 # 日志文件

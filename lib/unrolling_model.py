@@ -237,6 +237,7 @@ class UnrollingModel(nn.Module):
         assert not torch.isnan(output).any(), 'linear extrapolation has nan'
         # print('pad output', output.size(), output[:,:,-1].sum())
         if self.use_st_emb:
+            # print('self.st_emb.device', self.st_emb.device)
             output_emb = self.st_emb(output, t_list)
         else:
             output_emb = output

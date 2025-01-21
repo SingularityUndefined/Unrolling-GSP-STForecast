@@ -70,14 +70,16 @@ from collections import Counter
 
 batch_size = 12
 num_workers = 4
-dataset_dir = '/mnt/qij/datasets/PEMS0X_data/'
+dataset_dir = '../datasets/PEMS0X_data/'
 experiment_name = 'k_hop'
-dataset_name = args.dataset
+dataset_name = 'PEMS08'# args.dataset
 T = 12
 t_in = 6
 stride = 3
 
 train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, False)
+
+print('data.shape', train_set.data.shape)# , train_set.data[:288, 0])
 
 u_edges, u_dist = train_set.u_edges, train_set.u_distance
 n_nodes = train_set.n_nodes
@@ -103,5 +105,5 @@ def plot_cdf(dist:torch.Tensor, bins, dataset_name):
 print(u_dist.shape)
 # visualise_graph()
 plot_cdf(u_dist, 60, dataset_name)
-# 创建示例数据
+# # 创建示例数据
 

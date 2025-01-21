@@ -1,0 +1,10 @@
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 8  --loggrad 10 --cuda 1 --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR
+Status: Failed
+Start Time: 2025-01-20 23:18:16
+End Time: 2025-01-20 23:33:36
+-----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 8  --loggrad 10 --cuda 1 --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGTV
+Status: Failed
+Start Time: 2025-01-20 23:33:36
+End Time: 2025-01-21 06:20:36
+-----------------------------

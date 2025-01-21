@@ -111,6 +111,7 @@ class ADMMBlock(nn.Module):
         B, T = x.size(0), x.size(1)
         pad_x = torch.zeros_like(x[:,:,0], device=self.device).unsqueeze(2)
         pad_x = torch.cat((x, pad_x), dim=2)
+        # print('apply Ldr T: x, nn', x.size(), self.nearest_nodes.size())
 
         ##### CHANGED HERE##############################################
         holder = self.d_ew.unsqueeze(-1) * x[:,1:].unsqueeze(3) # in (B, T-1, N, k, n_heads, n_channels)
@@ -120,8 +121,8 @@ class ADMMBlock(nn.Module):
 
         if torch.any(index < 0) or torch.any(index >= in_features.size(2)):
             raise ValueError("Index out of bounds")
-        
-        in_features.scatter_add(2, index, holder.view(B, T-1, -1, self.n_heads, self.n_channels))
+        ## TODO #################
+        in_features = in_features.scatter_add(2, index, holder.view(B, T-1, -1, self.n_heads, self.n_channels))
         in_features = in_features[:,:,:-1]
         ############### ORIGINAL Version ###############
         # in_features = (self.d_ew.unsqueeze(-1) * pad_x[:, 1:, self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3) # in (B, T-1, N, n_heads, n_channels)

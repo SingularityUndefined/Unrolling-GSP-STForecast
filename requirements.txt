@@ -1,0 +1,6 @@
+torch>=2.4.1
+tqdm 
+numpy 
+matplotlib 
+networkx>=2.5
+pandas

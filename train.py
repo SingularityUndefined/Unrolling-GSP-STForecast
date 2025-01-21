@@ -86,7 +86,7 @@ def get_degrees(n_nodes, u_edges:torch.Tensor):
 
 k_hop = args.hop
 dataset_dir = '../datasets/PEMS0X_data/'
-experiment_name = f'{k_hop}_hop_concatFE_{args.tin}_{args.tout}_seed{args.seed}'
+experiment_name = f'{k_hop}_hop_lr_{args.lr:.0e}_seed{args.seed}'
 if args.ablation != 'None':
     experiment_name = f'wo_{args.ablation}' + experiment_name
 if not args.extrapolation:
@@ -143,35 +143,29 @@ if args.use_stepLR:
     scheduler = lr_scheduler.StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
 
 # 创建文件处理器
-log_dir = f'../JanModified/logs_midparam/{experiment_name}'
+log_dir = f'../FINAL/logs_FINAL/{experiment_name}'
 os.makedirs(log_dir, exist_ok=True)
 log_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.log'
 
 logger = setup_logger('logger1', os.path.join(log_dir, log_filename), logging.DEBUG, to_console=True)
 if args.loggrad:
-    grad_logger_dir = f'../JanModified/new_grad_logs_midparam/{experiment_name}'
+    grad_logger_dir = f'../FINAL/new_grad_logs_FINAL/{experiment_name}'
     os.makedirs(grad_logger_dir, exist_ok=True)
     grad_logger = setup_logger('logger2', os.path.join(grad_logger_dir, log_filename), logging.INFO, to_console=False)
 
-debug_model_path = os.path.join(f'../JanModified/debug_models_midparam/{experiment_name}', f'{dataset_name}/{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
+debug_model_path = os.path.join(f'../FINAL/debug_models_FINAL/{experiment_name}', f'{dataset_name}/{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f')
 
 print('log dir', log_dir)
 logger.info('#################################################')
-print(" ".join(sys.argv))
+logger.info("Training CMD:  "+ " ".join(sys.argv))
 logger.info('PARAMETER SETTINGS:')
 for arg, value in vars(args).items():
     logger.info("%s: %s", arg, value)
 logger.info('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
 total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 logger.info('pretrained path: %s', model_pretrained_path)
-# logger.info(f'learning k hop: {k_hop}')
 logger.info('feature channels: %d', feature_channels)
-# logger.info(f'graph sigma: {graph_sigma}')
-# logger.info(f'batch size: {batch_size}')
-# logger.info(f'learning rate: {learning_rate}')
-logger.info('Loss function: %s', loss_name)
 logger.info("Total parameters: %d", total_params)
-# logger.info(f'device: {device}')
 logger.info('PARAMTER SETTINGS:')
 logger.info('ADMM blocks: %d', num_admm_blocks)
 logger.info('ADMM info: %s', ADMM_info)
@@ -218,6 +212,12 @@ for epoch in range(num_epochs):
         except ValueError as ve:
             # plot the loss curve from loss_list
             # plot_loss_curve(loss_list, log_dir)
+            metrics, metrics_d = test(model, test_loader, data_normalization, False, logger, args, device, signal_channels)
+
+            logger.info('Test (ALL): rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', metrics['rec_RMSE'], metrics['pred_RMSE'], metrics['pred_MAE'], metrics['pred_MAPE'])
+            for i, s in enumerate(['flow', 'occupancy', 'speed']):
+                logger.info('Test (%s): rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', s, metrics_d['rec_RMSE'][i], metrics_d['pred_RMSE'][i], metrics_d['pred_MAE'][i], metrics_d['pred_MAPE'][i])
+
             plot_loss_curve(train_loss_list, val_loss_list, plot_path)
             logger.error(f'Error in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}')
             grad_logger.error(f'Error in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}')
@@ -283,12 +283,6 @@ for epoch in range(num_epochs):
     pred_rmse = math.sqrt(pred_mse / len(train_loader))
     pred_mae = pred_mae / len(train_loader)
     pred_mape = pred_mape / len(train_loader)
-    metrics = {
-        'rec_RMSE': rec_rmse,
-        'pred_RMSE': pred_rmse,
-        'pred_MAE': pred_mae,
-        'pred_MAPE(%)': pred_mape 
-    }
 
     logger.info('Training: Epoch [%d/%d], Loss:%.4f, rec_RMSE: %.4f, RMSE_next:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', epoch + 1, num_epochs, total_loss, rec_rmse, nearest_rmse, pred_rmse, pred_mae, pred_mape)
     logger.info('multiQ1, multiQ2, multiM: %f, %f, %f', glm.multiQ1.max().item(), glm.multiQ2.max().item(), glm.multiM.max().item())
@@ -305,65 +299,15 @@ for epoch in range(num_epochs):
 
     # validation
     if (epoch + 1) % 5 == 0:
-        model.eval()
-        with torch.no_grad():
-            running_loss = 0
-            nearest_loss = 0
-            rec_mse = 0
-            pred_mse = 0
-            pred_mape = 0
-            pred_mae = 0
-            for y, x, t_list in tqdm(val_loader):
-                y, x, t_list = y.to(device), x.to(device), t_list.to(device)
+        running_loss, metrics, metric_d = test(model, val_loader, data_normalization, masked_flag, logger, args, device, signal_channels, mode='val', loss_fn=loss_fn)
 
-                # y = (y - train_mean) / train_std
-                # y = (y - train_min) / (train_max - train_min)
-                y = data_normalization.normalize_data(y)
-                output = model(y, t_list)
-                output = data_normalization.recover_data(output)
-                if args.mode == 'normalize':
-                    output = nn.ReLU()(output)
-                # output = output * (train_max - train_min) + train_min
-                # output = output * train_std + train_mean
+        val_loss_list.append(running_loss)
 
-                rec_mse += ((x[:,:t_in] - output[:,:t_in]) ** 2).mean().item()
-                if masked_flag:
-                    x, output = x[:,t_in:], output[:,t_in:]
-                loss = loss_fn(output, x)
+        logger.info('Validation: Epoch [%d/%d], Loss:%.4f, rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', epoch + 1, num_epochs, running_loss, metrics['rec_RMSE'], metrics['pred_RMSE'], metrics['pred_MAE'], metrics['pred_MAPE'])
 
-                running_loss += loss.item()
-                if masked_flag:
-                    pred_mse += ((x - output) ** 2).mean().item()
-                    pred_mae += (torch.abs(output - x)).mean().item()
-                    mask = (x > 1e-8)
-                    pred_mape += (torch.abs(output[mask] - x[mask]) / x[mask]).mean().item() * 100
-                    nearest_loss += ((x[:, 0] - output[:, 0]) ** 2).mean().item()
-                else:
-                    x_pred = x[:,t_in:]
-                    output_pred = output[:,t_in:]
-                    mask = x_pred > 1e-8
-                    pred_mse += ((x_pred - output_pred) ** 2).mean().item()
-                    pred_mae += (torch.abs(output_pred - x_pred)).mean().item()
-                    pred_mape += (torch.abs(output_pred[mask] - x_pred[mask]) / x_pred[mask]).mean().item() * 100
-                    nearest_loss += ((x[:, t_in] - output[:, t_in]) ** 2).mean().item()
-
-        total_loss = running_loss / len(val_loader)
-        val_loss_list.append(total_loss)
-        nearest_rmse = math.sqrt(nearest_loss / len(val_loader))
-        rec_rmse = math.sqrt(rec_mse / len(val_loader))
-        pred_rmse = math.sqrt(pred_mse / len(val_loader))
-        pred_mae = pred_mae / len(val_loader)
-        pred_mape = pred_mape / len(val_loader)
-        metrics = {
-            'rec_RMSE': rec_rmse,
-            'pred_RMSE': pred_rmse,
-            'pred_MAE': pred_mae,
-            'pred_MAPE(%)': pred_mape 
-        }
-        
-        logger.info('Validation: Epoch [%d/%d], Loss:%.4f, rec_RMSE:%.4f RMSE_next:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', epoch + 1, num_epochs, total_loss, rec_rmse, nearest_rmse, pred_rmse, pred_mae, pred_mape)
+        for i, s in enumerate(['flow', 'occupancy', 'speed']):
+            logger.info('Channal %s:\t rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', s, metric_d['rec_RMSE'][i], metric_d['pred_RMSE'][i], metric_d['pred_MAE'][i], metric_d['pred_MAPE'][i])
         # save models
-        torch.save(model, os.path.join(model_dir, f'val_{epoch+1}.pth'))
+        torch.save(model.state_dict(), os.path.join(model_dir, f'val_{epoch+1}.pth'))
 
-    # rmse_total = math.sqrt(avg_mse_loss)
 plot_loss_curve(train_loss_list, val_loss_list, plot_path)
