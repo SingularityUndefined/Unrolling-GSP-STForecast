@@ -99,3 +99,8 @@ Status: Failed
 Start Time: 2025-01-22 09:56:09
 End Time: 2025-01-22 09:56:16
 -----------------------------
+Command: python train.py --dataset PEMS08 --hop 4 --batchsize 8  --loggrad 20 --cuda 0 --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR
+Status: Success
+Start Time: 2025-01-22 03:24:50
+End Time: 2025-01-22 10:31:28
+-----------------------------
