@@ -20,7 +20,7 @@ def seed_everything(seed=11):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-def create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time):# , use_one_channel=False):
+def create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=False):
     data_folder = os.path.join(dataset_dir, dataset_name)
     graph_csv = dataset_name + '.csv'
     data_file = dataset_name + '.npz'
@@ -29,9 +29,9 @@ def create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, nu
     else:
         id_file = None
 
-    train_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'train', id_file=id_file, return_time=return_time)# , use_one_channel=use_one_channel)
-    val_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'val', id_file=id_file, return_time=return_time)# , use_one_channel=use_one_channel)
-    test_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'test', id_file=id_file, return_time=return_time)# , use_one_channel=use_one_channel)
+    train_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'train', id_file=id_file, return_time=return_time, use_one_channel=use_one_channel)
+    val_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'val', id_file=id_file, return_time=return_time, use_one_channel=use_one_channel)
+    test_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'test', id_file=id_file, return_time=return_time, use_one_channel=use_one_channel)
 
     train_loader = DataLoader(train_set, batch_size, shuffle=True, num_workers=num_workers)
     val_loader = DataLoader(val_set, batch_size, shuffle=False, num_workers=num_workers)
@@ -102,11 +102,17 @@ class Normalization():
         elif self.mode == 'standardize':
             return (x - self.min) / (self.max - self.min)
         
-    def recover_data(self, x):
-        if self.mode == 'normalize':
-            return x * self.std + self.mean
-        elif self.mode == 'standardize':
-            return x * (self.max - self.min) + self.min
+    def recover_data(self, x, use_one_channel=False):
+        if use_one_channel:
+            if self.mode == 'normalize':
+                return x * self.std[...,0:1] + self.mean[...,0:1]
+            elif self.mode == 'standardize':
+                return x * (self.max[...,0:1] - self.min[...,0:1]) + self.min[...,0:1]
+        else:
+            if self.mode == 'normalize':
+                return x * self.std + self.mean
+            elif self.mode == 'standardize':
+                return x * (self.max - self.min) + self.min
         
 def plot_loss_curve(train_loss, val_loss, save_path, val_freq=5, use_log=False):
     train_len, val_len = len(train_loss), len(val_loss)
@@ -162,7 +168,7 @@ def change_model_location(model_path, device):
     return model
 
 
-def test(model, val_loader, data_normalization, masked_flag, logger, args, device, signal_channels, mode='test', loss_fn=None, use_one_channel=False):
+def test(model, val_loader, data_normalization, masked_flag, args, device, signal_channels, mode='test', loss_fn=None, use_one_channel=False):
     model.eval()
     with torch.no_grad():
         rec_mse = 0
@@ -185,14 +191,15 @@ def test(model, val_loader, data_normalization, masked_flag, logger, args, devic
             # y = (y - train_min) / (train_max - train_min)
             y = data_normalization.normalize_data(y)
             output = model(y, t_list)
-            output = data_normalization.recover_data(output)
+            output = data_normalization.recover_data(output, use_one_channel)
             if args.mode == 'normalize':
                 output = nn.ReLU()(output)
             # output = output * (train_max - train_min) + train_min
             # output = output * train_std + train_mean
 
             rec_mse += ((x[:,:args.tin] - output[:,:args.tin]) ** 2).mean().item()
-            rec_mse_d += ((x[:,:args.tin] - output[:,:args.tin]) ** 2).mean((0,1,2)).cpu().numpy()# .item()
+            if not use_one_channel:
+                rec_mse_d += ((x[:,:args.tin] - output[:,:args.tin]) ** 2).mean((0,1,2)).cpu().numpy()# .item()
             if masked_flag:
                 x, output = x[:,args.t_in:], output[:,args.tin:]
             
@@ -221,7 +228,7 @@ def test(model, val_loader, data_normalization, masked_flag, logger, args, devic
                     for i in range(signal_channels):
                         mask_i = x_pred[:,:,:,i] > 1e-8
                         pred_mape_d[i] += (torch.abs(output_pred[:,:,:,i][mask_i] - x_pred[:,:,:,i][mask_i]) / x_pred[:,:,:,i][mask_i]).mean().item() * 100
-            # break
+            break
 
     rec_rmse = math.sqrt(rec_mse / len(val_loader))
     pred_rmse = math.sqrt(pred_mse / len(val_loader))

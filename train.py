@@ -95,6 +95,9 @@ if args.ablation != 'None':
     experiment_name = f'wo_{args.ablation}' + experiment_name
 if not args.extrapolation:
     experiment_name = 'LR_' + experiment_name
+
+if args.use_one_channel:
+    experiment_name = '1channel_' + experiment_name
 dataset_name = args.dataset
 T = args.tin + args.tout
 t_in = args.tin
@@ -102,7 +105,7 @@ stride = 3
 
 return_time = True
 
-train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time)
+train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=args.use_one_channel)
 signal_channels = train_set.signal_channel
 
 # if args.use_one_channel:
@@ -218,6 +221,7 @@ for epoch in range(num_epochs):
         # y = (y - train_min) / (train_max - train_min)
         try:
             output = model(y, t_list) # in (B, T, nodes, 1)
+            # raise ValueError('raised value error')
         except ValueError as ve:
             # plot the loss curve from loss_list
             # plot_loss_curve(loss_list, log_dir)
@@ -226,25 +230,26 @@ for epoch in range(num_epochs):
 
             plot_loss_curve(train_loss_list, val_loss_list, plot_path)
 
-            if args.use_one_channel:
-                metrics, metrics_d = test(model, test_loader, data_normalization, False, logger, args, device, signal_channels)
+            if not args.use_one_channel:
+                metrics, metrics_d = test(model, test_loader, data_normalization, False, args, device, signal_channels, use_one_channel=False)
             else:
-                metrics = test(model, test_loader, data_normalization, False, logger, args, device, signal_channels)
+                metrics = test(model, test_loader, data_normalization, False, logger, args, device, signal_channels, use_one_channel=True)
 
             logger.info('Test (ALL): rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', metrics['rec_RMSE'], metrics['pred_RMSE'], metrics['pred_MAE'], metrics['pred_MAPE'])
 
-            if args.use_one_channel:
+            if not args.use_one_channel:
                 for i in range(signal_channels):
                     logger.info('Test (%s): rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', signal_list[i], metrics_d['rec_RMSE'][i], metrics_d['pred_RMSE'][i], metrics_d['pred_MAE'][i], metrics_d['pred_MAPE'][i])
 
 
             raise ValueError(f'Error in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}') from ve
-        # except AssertionError as ae:
-           #  print(f'Error in [Epoch {epoch}, Iter {iteration_count}] - {ae}')
-        output = data_normalization.recover_data(output)
+        
+        # recover data
+        output = data_normalization.recover_data(output, args.use_one_channel)
         if args.mode == 'normalize':
-        # output = output * (train_max - train_min) + train_min # output * train_std + train_mean
             output = nn.ReLU()(output)# [:,:,:,:signal_channels]
+
+            # print('x, output shape', x.size(), output.size())
 
         rec_mse += ((x[:,:t_in] - output[:,:t_in]) ** 2).mean().item()
         # only unknowns
@@ -317,9 +322,9 @@ for epoch in range(num_epochs):
     # validation
     if (epoch + 1) % 5 == 0:
         if not args.use_one_channel:
-            running_loss, metrics, metric_d = test(model, val_loader, data_normalization, masked_flag, logger, args, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=False)
+            running_loss, metrics, metric_d = test(model, val_loader, data_normalization, masked_flag, args, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=False)
         else:
-            running_loss, metrics = test(model, val_loader, data_normalization, masked_flag, logger, args, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=True)
+            running_loss, metrics = test(model, val_loader, data_normalization, masked_flag, args, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=True)
 
         val_loss_list.append(running_loss)
 

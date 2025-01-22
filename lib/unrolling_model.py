@@ -249,12 +249,14 @@ class UnrollingModel(nn.Module):
 
         assert not torch.isnan(output).any(), 'linear extrapolation has nan'
         # print('pad output', output.size(), output[:,:,-1].sum())
+        if self.use_st_emb:
+            shared_output_emb = self.st_emb(t_list)
 
         for i in range(self.num_blocks):
             # print('block', i)
             if self.use_st_emb:
             # print('self.st_emb.device', self.st_emb.device)
-                output_emb = self.st_emb(output, t_list)
+                output_emb = torch.cat((output, shared_output_emb), -1)# self.st_emb(output, t_list)
             else:
                 output_emb = output
             # print('output_emb', output_emb.size())
@@ -296,9 +298,12 @@ class UnrollingModel(nn.Module):
             p = self.skip_connection_weights[i]
             assert not torch.isnan(self.skip_connection_weights).any(), f'skip connection has NaN Values in block {i}'
             output = p * output_new + (1-p) * output_old
+            # print(f'output after block {i}: {output.size()}')
 
         if self.use_norm:
             output = layer_recovery_on_data(output, self.norm_shape, mean, std)
+
+        # print('output', output.size())
         return output        # 
 
 def get_max_in_dict(ew:dict):

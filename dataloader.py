@@ -54,7 +54,7 @@ def physical_graph(df, sensor_dict=None):
 
 
 class TrafficDataset(Dataset):
-    def __init__(self, data_folder, graph_csv, data_file, T, t, stride, split='train', n_nodes=None, id_file=None, return_time=False): # , use_one_channel=False) -> None:
+    def __init__(self, data_folder, graph_csv, data_file, T, t, stride, split='train', n_nodes=None, id_file=None, return_time=False, use_one_channel=False): # , use_one_channel=False) -> None:
         '''
         train:val:test = 6:2:2
         Components:
@@ -72,7 +72,7 @@ class TrafficDataset(Dataset):
         self.stride = stride
         self.return_time = return_time
         data = np.load(os.path.join(data_folder, data_file))['data'] # (T, n_in)
-        # self.use_one_channel = use_one_channel
+        self.use_one_channel = use_one_channel
         # if self.use_one_channel:
         #     data = data[..., 0:1]
         
@@ -118,6 +118,8 @@ class TrafficDataset(Dataset):
         y = self.data[index * self.stride:index * self.stride + self.t] # in (t, n_nodes, 1)
         x = self.data[index * self.stride:index * self.stride + self.T] # in (T, n_nodes, 1)
         # model(y) = x
+        if self.use_one_channel:
+            x = x[...,0:1]
         time = torch.arange(0, self.T).type(torch.long) + index * self.stride + self.data_begin
         if self.return_time:
             return torch.Tensor(y), torch.Tensor(x), time

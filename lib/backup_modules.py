@@ -101,20 +101,21 @@ class SpatialTemporalEmbedding(nn.Module): # Non-parametric
         self.half_tid_dim = tid_dim // 2
         self.half_diw_dim = diw_dim // 2
 
-    def forward(self, x, t_list=None):
+    def forward(self, t_list=None):
         '''
         x in (B, T, n_nodes, 1)
         t in (B, T) t[batch, i] = t_i
         return (B, T, n_nodes, Dx + Ds + Dt)
         '''
-        B, T = x.size(0), x.size(1)
+        B, T = t_list.size(0), t_list.size(1)
         s_emb = self.spatial_emb.unsqueeze(0).unsqueeze(1).repeat(B, T, 1, 1)
-        x =  torch.cat((x, s_emb), -1)
+        emb = s_emb
+        # x =  torch.cat((x, s_emb), -1)
         if t_list is not None:
             t_emb = position_embedding(t_list, self.half_t_dim, self.half_tid_dim, self.half_diw_dim, self.device).unsqueeze(2).repeat(1, 1, self.n_nodes, 1) 
             # print(x.size(), t_emb.size())
-            x = torch.cat((x, t_emb), -1)
-        return x
+            emb = torch.cat((emb, t_emb), -1)
+        return emb
 
 # class SpatialTemporalEmbedding(nn.Module):
 #     def __init__(self, k, n_nodes, edges, u_dist, sigma, device, tid_dim=10, diw_dim=2, use_t_emb=True):
