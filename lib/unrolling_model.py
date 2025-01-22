@@ -44,7 +44,8 @@ class UnrollingModel(nn.Module):
                  extrapolation_agg_layers=2,
                  sigma_ratio=450,
                  ablation='None',
-                 use_one_channel=False
+                 use_one_channel=False,
+                 shared_params=True,
                  ):
         super().__init__()
         self.num_blocks = num_blocks
@@ -129,6 +130,7 @@ class UnrollingModel(nn.Module):
                         n_heads=n_heads,
                         device=device,
                         n_channels=feature_channels,
+                        shared_params=shared_params
                     )
                 }
             ))

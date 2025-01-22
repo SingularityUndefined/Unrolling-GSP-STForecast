@@ -21,9 +21,17 @@ done
 # 定义要执行的命令
 commands=(
     # todo: Needs to lower learning rate for main experiments
+    # "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 16  --loggrad 20 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --flow"
+    # "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 28  --loggrad 20 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGTV --flow"
+    # "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 24  --loggrad 20 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR"
+
     "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 16  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --flow"
     "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 28  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --ablation DGTV --flow"
     "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 24  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR"
+
+    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 16  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss MSE --flow"
+    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 28  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss MSE --ablation DGTV --flow"
+    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 24  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss MSE --ablation DGLR"
 
     "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 6  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber"
     "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 6  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --ablation DGTV"

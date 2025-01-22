@@ -47,6 +47,8 @@ parser.set_defaults(use_stepLR=False)
 parser.add_argument('--flow', help='flow channel', dest='use_one_channel', action='store_true')
 parser.set_defaults(use_one_channel=False)
 
+parser.add_argument('--diffM', dest='shared_params', action='store_false')
+parser.set_defaults(shared_params=True)
 args = parser.parse_args()
 
 seed_everything(args.seed)
@@ -98,6 +100,9 @@ if not args.extrapolation:
 
 if args.use_one_channel:
     experiment_name = '1channel_' + experiment_name
+
+if not args.shared_params:
+    experiment_name = 'diffM_' + experiment_name
 dataset_name = args.dataset
 T = args.tin + args.tout
 t_in = args.tin
@@ -116,6 +121,9 @@ signal_list = ['flow', 'occupancy', 'speed']
 print('signal channels', signal_channels)
 # data normalization
 data_normalization = Normalization(train_set, args.mode, device)
+# print(train_set.data[...,0].mean(0).min(), train_set.data[...,0].mean(0).max())
+print('mean value of data', data_normalization.mean[...,0].min(), data_normalization.mean[...,0].max())
+print('std of data', data_normalization.std[...,0].min(), data_normalization.std[...,0].max())
 
 num_admm_blocks = args.numblock
 num_heads = 4
@@ -134,7 +142,7 @@ model_pretrained_path = None
 
 
 print('args.ablation', args.ablation)
-model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, use_extrapolation=args.extrapolation, use_one_channel=args.use_one_channel).to(device)
+model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, use_extrapolation=args.extrapolation, use_one_channel=args.use_one_channel, shared_params=args.shared_params).to(device)
 # 'UnrollingForecasting/MainExperiments/models/v2/PEMS04/direct_4b_4h_6f/val_15.pth'
 
 if model_pretrained_path is not None:
@@ -167,7 +175,7 @@ if args.loggrad:
 
 debug_model_path = os.path.join(f'../FINAL/debug_models_FINAL/{experiment_name}', f'{dataset_name}/{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f')
 
-print('log dir', log_dir)
+# print('log dir', log_dir)
 logger.info('#################################################')
 logger.info("Training CMD:  "+ " ".join(sys.argv))
 logger.info('PARAMETER SETTINGS:')
@@ -185,13 +193,13 @@ logger.info('graph info: nodes %d, edges %d, signal channels %d', train_set.n_no
 logger.info('--------BEGIN TRAINING PROCESS------------')
 
 grad_logger.info('------BEGIN TRAINING PROCESS-------')
-
-model_dir = os.path.join(f'../JanModified/models_midparam/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
+print('log dir', log_dir)
+model_dir = os.path.join(f'../FINAL/models_midparam/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
 os.makedirs(model_dir, exist_ok=True)
 masked_flag = False
 # train models
 # test = True
-plot_list = f'../JanModified/loss_curve_midparam/{experiment_name}'
+plot_list = f'../FINAL/loss_curve_midparam/{experiment_name}'
 os.makedirs(plot_list, exist_ok=True)
 plot_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.png'
 plot_path = os.path.join(plot_list, plot_filename)
@@ -217,10 +225,11 @@ for epoch in range(num_epochs):
         y, x, t_list = y.to(device), x.to(device), t_list.to(device) # y in (B, t, nodes, 1)
         # normalization
         # y = (y - train_mean) / train_std
-        y = data_normalization.normalize_data(y)
+        normed_y = data_normalization.normalize_data(y)
+        normed_x = data_normalization.normalize_data(x, args.use_one_channel)
         # y = (y - train_min) / (train_max - train_min)
         try:
-            output = model(y, t_list) # in (B, T, nodes, 1)
+            normed_output = model(normed_y, t_list) # in (B, T, nodes, 1)
             # raise ValueError('raised value error')
         except ValueError as ve:
             # plot the loss curve from loss_list
@@ -245,24 +254,26 @@ for epoch in range(num_epochs):
             raise ValueError(f'Error in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}') from ve
         
         # recover data
-        output = data_normalization.recover_data(output, args.use_one_channel)
-        if args.mode == 'normalize':
-            output = nn.ReLU()(output)# [:,:,:,:signal_channels]
-
+        loss = loss_fn(normed_output, normed_x)
+        loss.backward()
+        optimizer.step()
+        # recover data
+        output = data_normalization.recover_data(normed_output, args.use_one_channel)
+        # if args.mode == 'normalize':
+        #     output = nn.ReLU()(output)# [:,:,:,:signal_channels]
             # print('x, output shape', x.size(), output.size())
-
         rec_mse += ((x[:,:t_in] - output[:,:t_in]) ** 2).mean().item()
         # only unknowns
         if masked_flag:
             x, output = x[:,t_in:], output[:,t_in:]
-        loss = loss_fn(output, x)
+
+        # loss = loss_fn(output, x)
 
         if torch.isnan(loss).any():
             logger.error(f'Loss is NaN in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]')
             raise ValueError(f'Loss is NaN in [Epoch {epoch}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]')
-        
-        loss.backward()       
-        optimizer.step()
+        # loss.backward()       
+        # optimizer.step()
         iteration_count += 1
 
         log_gradients(epoch, num_epochs, iteration_count, train_loader, model, grad_logger, args)
@@ -292,12 +303,12 @@ for epoch in range(num_epochs):
             pred_mape += (torch.abs(output_pred[mask] - x_pred[mask]) / x_pred[mask]).mean().item() * 100
             nearest_loss += ((x[:, t_in] - output[:, t_in]) ** 2 / y.size(0)).mean().item()
 
-        glm = model.model_blocks[0]['graph_learning_module']
-        admm_block = model.model_blocks[0]['ADMM_block']
+        # glm = model.model_blocks[0]['graph_learning_module']
+        # admm_block = model.model_blocks[0]['ADMM_block']
         # break
     
     logger.info('output: (%f, %f)', output.max().item(), output.min().item())
-    print_gradients(model)
+    # print_gradients(model)
     total_loss = running_loss / len(train_loader)
     train_loss_list.append(total_loss)
     nearest_rmse = math.sqrt(nearest_loss / len(train_loader))
@@ -307,17 +318,17 @@ for epoch in range(num_epochs):
     pred_mape = pred_mape / len(train_loader)
 
     logger.info('Training: Epoch [%d/%d], Loss:%.4f, rec_RMSE: %.4f, RMSE_next:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', epoch + 1, num_epochs, total_loss, rec_rmse, nearest_rmse, pred_rmse, pred_mae, pred_mape)
-    logger.info('multiQ1, multiQ2, multiM: %f, %f, %f', glm.multiQ1.max().item(), glm.multiQ2.max().item(), glm.multiM.max().item())
-    if args.ablation in ['None', 'DGLR']:
-        logger.info('rho: %f', admm_block.rho.max().item())
-    logger.info('rho_u: %f', admm_block.rho_u.max().item())
-    if args.ablation != 'DGLR':
-        logger.info('rho_d: %f', admm_block.rho_d.max().item())
+    # logger.info('multiQ1, multiQ2, multiM: %f, %f, %f', glm.multiQ1.max().item(), glm.multiQ2.max().item(), glm.multiM.max().item())
+    # if args.ablation in ['None', 'DGLR']:
+    #     logger.info('rho: %f', admm_block.rho.max().item())
+    # logger.info('rho_u: %f', admm_block.rho_u.max().item())
+    # if args.ablation != 'DGLR':
+    #     logger.info('rho_d: %f', admm_block.rho_d.max().item())
 
-    logger.info('alpha_x, (%.4f, %.4f), beta_x (%.4f, %.4f)', admm_block.alpha_x.min().item(), admm_block.alpha_x.max().item(), admm_block.beta_x.min().item(), admm_block.beta_x.max().item())
-    logger.info('alpha_zu, (%.4f, %.4f), beta_zu (%.4f, %.4f)', admm_block.alpha_zu.min().item(), admm_block.alpha_zu.max().item(), admm_block.beta_zu.min().item(), admm_block.beta_zu.max().item())
-    if args.ablation != 'DGLR':
-        logger.info('alpha_zd, (%.4f, %.4f), beta_zd (%.4f, %.4f)', admm_block.alpha_zd.min().item(), admm_block.alpha_zd.max().item(), admm_block.beta_zd.min().item(), admm_block.beta_zd.max().item())
+    # logger.info('alpha_x, (%.4f, %.4f), beta_x (%.4f, %.4f)', admm_block.alpha_x.min().item(), admm_block.alpha_x.max().item(), admm_block.beta_x.min().item(), admm_block.beta_x.max().item())
+    # logger.info('alpha_zu, (%.4f, %.4f), beta_zu (%.4f, %.4f)', admm_block.alpha_zu.min().item(), admm_block.alpha_zu.max().item(), admm_block.beta_zu.min().item(), admm_block.beta_zu.max().item())
+    # if args.ablation != 'DGLR':
+    #     logger.info('alpha_zd, (%.4f, %.4f), beta_zd (%.4f, %.4f)', admm_block.alpha_zd.min().item(), admm_block.alpha_zd.max().item(), admm_block.beta_zd.min().item(), admm_block.beta_zd.max().item())
 
     # validation
     if (epoch + 1) % 5 == 0:

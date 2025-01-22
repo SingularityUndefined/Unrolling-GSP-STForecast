@@ -18,13 +18,13 @@ done
 
 # 定义要执行的命令
 commands=(
-    "$python_path train.py --dataset PEMS04 --hop 4 --batchsize 8  --loggrad 20 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --flow"
-    "$python_path train.py --dataset PEMS04 --hop 4 --batchsize 14  --loggrad 10 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR --flow"
-    "$python_path train.py --dataset PEMS04 --hop 4 --batchsize 16  --loggrad 10 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGTV --flow"
-
     "$python_path train.py --dataset PEMS04 --hop 4 --batchsize 8  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --flow"
     "$python_path train.py --dataset PEMS04 --hop 4 --batchsize 14  --loggrad 10 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR --flow"
     "$python_path train.py --dataset PEMS04 --hop 4 --batchsize 16  --loggrad 10 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --ablation DGTV --flow"
+
+    "$python_path train.py --dataset PEMS04 --hop 4 --batchsize 8  --loggrad 20 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --flow"
+    "$python_path train.py --dataset PEMS04 --hop 4 --batchsize 14  --loggrad 10 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR --flow"
+    "$python_path train.py --dataset PEMS04 --hop 4 --batchsize 16  --loggrad 10 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGTV --flow"
     
     "$python_path train.py --dataset PEMS04 --hop 4 --batchsize 2  --loggrad 20 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber"
     "$python_path train.py --dataset PEMS04 --hop 4 --batchsize 4  --loggrad 10 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR"

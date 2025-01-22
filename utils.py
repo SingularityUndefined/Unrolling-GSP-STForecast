@@ -93,14 +93,20 @@ class Normalization():
             self.min = torch.Tensor(dataset.data.min(0)).to(device)
             self.max = torch.Tensor(dataset.data.max(0)).to(device)
 
-    def normalize_data(self, x):
+    def normalize_data(self, x, use_one_channel=False):
         '''
         *args = (mean, std) or *args = (min, max)
         '''
         if self.mode == 'normalize':
-            return (x - self.mean) / self.std
+            if use_one_channel:
+                return (x - self.mean[...,0:1]) / self.std[...,0:1]
+            else:
+                return (x - self.mean) / self.std
         elif self.mode == 'standardize':
-            return (x - self.min) / (self.max - self.min)
+            if use_one_channel:
+                return (x - self.min[...,0:1]) / (self.max[...,0:1] - self.min[...,0:1])
+            else:
+                return (x - self.min) / (self.max - self.min)
         
     def recover_data(self, x, use_one_channel=False):
         if use_one_channel:
@@ -155,7 +161,9 @@ def print_gradients(model):
             print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
 
 def change_model_location(model_path, device):
-    model = torch.load(model_path, map_location=device).to(device)
+    model_params = torch.load(model_path, map_location=device)
+    model.load_state_dict(model_params)
+    # model = torch.load(model_path, map_location=device).to(device)
     for name, module in model.named_children():
         if hasattr(module, 'device'):
             print(f'Loaded module: {name}')
@@ -189,11 +197,18 @@ def test(model, val_loader, data_normalization, masked_flag, args, device, signa
 
             # y = (y - train_mean) / train_std
             # y = (y - train_min) / (train_max - train_min)
-            y = data_normalization.normalize_data(y)
-            output = model(y, t_list)
-            output = data_normalization.recover_data(output, use_one_channel)
-            if args.mode == 'normalize':
-                output = nn.ReLU()(output)
+            normed_y = data_normalization.normalize_data(y)
+            normed_x = data_normalization.normalize_data(x)
+            nomred_output = model(normed_y, t_list)
+
+            if loss_fn is not None:
+                loss = loss_fn(output, normed_x)
+                running_loss += loss.item()
+            
+            output = data_normalization.recover_data(nomred_output, use_one_channel)
+            
+            # if args.mode == 'normalize':
+            #     output = nn.ReLU()(output)
             # output = output * (train_max - train_min) + train_min
             # output = output * train_std + train_mean
 
@@ -228,7 +243,7 @@ def test(model, val_loader, data_normalization, masked_flag, args, device, signa
                     for i in range(signal_channels):
                         mask_i = x_pred[:,:,:,i] > 1e-8
                         pred_mape_d[i] += (torch.abs(output_pred[:,:,:,i][mask_i] - x_pred[:,:,:,i][mask_i]) / x_pred[:,:,:,i][mask_i]).mean().item() * 100
-            break
+            # break
 
     rec_rmse = math.sqrt(rec_mse / len(val_loader))
     pred_rmse = math.sqrt(pred_mse / len(val_loader))
