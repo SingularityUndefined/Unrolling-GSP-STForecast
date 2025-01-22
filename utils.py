@@ -198,14 +198,27 @@ def test(model, val_loader, data_normalization, masked_flag, args, device, signa
             # y = (y - train_mean) / train_std
             # y = (y - train_min) / (train_max - train_min)
             normed_y = data_normalization.normalize_data(y)
-            normed_x = data_normalization.normalize_data(x)
-            nomred_output = model(normed_y, t_list)
-
-            if loss_fn is not None:
-                loss = loss_fn(output, normed_x)
-                running_loss += loss.item()
+            normed_x = data_normalization.normalize_data(x, args.use_one_channel)
+            normed_output = model(normed_y, t_list)
             
-            output = data_normalization.recover_data(nomred_output, use_one_channel)
+            if args.normed_loss:
+                if loss_fn is not None:
+                    if masked_flag:
+                        loss = loss_fn(normed_output[:, args.tin:], normed_x[:, args.tin:])
+                    else:
+                        loss = loss_fn(normed_output, normed_x)
+                    running_loss += loss.item()
+                # recover data
+                output = data_normalization.recover_data(normed_output, args.use_one_channel)
+
+            else:
+                output = data_normalization.recover_data(normed_output, args.use_one_channel)
+                if loss_fn is not None:
+                    if masked_flag:
+                        loss = loss_fn(output[:,args.tin:], x[:,args.tin:])
+                    else:
+                        loss = loss_fn(output, x)
+                    running_loss += loss.item()
             
             # if args.mode == 'normalize':
             #     output = nn.ReLU()(output)

@@ -13,3 +13,58 @@ Status: Failed
 Start Time: 2025-01-21 21:14:44
 End Time: 2025-01-21 21:14:50
 -----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 8  --loggrad 20 --cuda 0 --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --flow
+Status: Success
+Start Time: 2025-01-22 11:45:35
+End Time: 2025-01-22 21:49:44
+-----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 14  --loggrad 10 --cuda 0 --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR --flow
+Status: Failed
+Start Time: 2025-01-22 21:49:44
+End Time: 2025-01-22 22:35:12
+-----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 16  --loggrad 10 --cuda 0 --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --ablation DGTV --flow
+Status: Failed
+Start Time: 2025-01-22 22:35:12
+End Time: 2025-01-22 22:35:16
+-----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 8  --loggrad 20 --cuda 0 --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --flow
+Status: Failed
+Start Time: 2025-01-22 22:35:16
+End Time: 2025-01-22 22:35:21
+-----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 14  --loggrad 10 --cuda 0 --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR --flow
+Status: Failed
+Start Time: 2025-01-22 22:35:21
+End Time: 2025-01-22 22:35:26
+-----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 16  --loggrad 10 --cuda 0 --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGTV --flow
+Status: Failed
+Start Time: 2025-01-22 22:35:26
+End Time: 2025-01-22 22:35:31
+-----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 2  --loggrad 20 --cuda 0 --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber
+Status: Failed
+Start Time: 2025-01-22 22:35:31
+End Time: 2025-01-22 22:35:36
+-----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 4  --loggrad 10 --cuda 0 --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR
+Status: Failed
+Start Time: 2025-01-22 22:35:36
+End Time: 2025-01-22 22:35:41
+-----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 6  --loggrad 10 --cuda 0 --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGTV
+Status: Failed
+Start Time: 2025-01-22 22:35:41
+End Time: 2025-01-22 22:35:47
+-----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 8  --loggrad 20 --cuda 0 --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --flow
+Status: Failed
+Start Time: 2025-01-22 22:41:54
+End Time: 2025-01-22 22:41:59
+-----------------------------
+Command: python train.py --dataset PEMS04 --hop 4 --batchsize 8  --loggrad 20 --cuda 0 --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --flow
+Status: Failed
+Start Time: 2025-01-22 22:42:43
+End Time: 2025-01-22 22:42:48
+-----------------------------

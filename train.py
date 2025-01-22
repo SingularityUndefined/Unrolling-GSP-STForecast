@@ -49,6 +49,9 @@ parser.set_defaults(use_one_channel=False)
 
 parser.add_argument('--diffM', dest='shared_params', action='store_false')
 parser.set_defaults(shared_params=True)
+
+parser.add_argument('--normloss', dest='normed_loss', action='store_true')
+parser.set_defaults(normed_loss=False)
 args = parser.parse_args()
 
 seed_everything(args.seed)
@@ -103,6 +106,12 @@ if args.use_one_channel:
 
 if not args.shared_params:
     experiment_name = 'diffM_' + experiment_name
+
+if args.normed_loss:
+    experiment_name = experiment_name + 'normed_loss'
+else:
+    experiment_name = experiment_name + 'true_loss'
+
 dataset_name = args.dataset
 T = args.tin + args.tout
 t_in = args.tin
@@ -224,10 +233,10 @@ for epoch in range(num_epochs):
         optimizer.zero_grad()
         y, x, t_list = y.to(device), x.to(device), t_list.to(device) # y in (B, t, nodes, 1)
         # normalization
-        # y = (y - train_mean) / train_std
+
         normed_y = data_normalization.normalize_data(y)
         normed_x = data_normalization.normalize_data(x, args.use_one_channel)
-        # y = (y - train_min) / (train_max - train_min)
+
         try:
             normed_output = model(normed_y, t_list) # in (B, T, nodes, 1)
             # raise ValueError('raised value error')
@@ -254,11 +263,24 @@ for epoch in range(num_epochs):
             raise ValueError(f'Error in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}') from ve
         
         # recover data
-        loss = loss_fn(normed_output, normed_x)
-        loss.backward()
-        optimizer.step()
-        # recover data
-        output = data_normalization.recover_data(normed_output, args.use_one_channel)
+        if args.normed_loss:
+            if masked_flag:
+                loss = loss_fn(normed_output[:, t_in:], normed_x[:, t_in:])
+            else:
+                loss = loss_fn(normed_output, normed_x)
+            loss.backward()
+            optimizer.step()
+            # recover data
+            output = data_normalization.recover_data(normed_output, args.use_one_channel)
+
+        else:
+            output = data_normalization.recover_data(normed_output, args.use_one_channel)
+            if masked_flag:
+                loss = loss_fn(output[:,t_in:], x[:,t_in:])
+            else:
+                loss = loss_fn(output, x)
+            loss.backward()
+            optimizer.step()
         # if args.mode == 'normalize':
         #     output = nn.ReLU()(output)# [:,:,:,:signal_channels]
             # print('x, output shape', x.size(), output.size())
@@ -267,7 +289,6 @@ for epoch in range(num_epochs):
         if masked_flag:
             x, output = x[:,t_in:], output[:,t_in:]
 
-        # loss = loss_fn(output, x)
 
         if torch.isnan(loss).any():
             logger.error(f'Loss is NaN in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]')
