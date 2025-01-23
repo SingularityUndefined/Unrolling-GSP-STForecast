@@ -186,6 +186,26 @@ def LR_guess(y, T, device): # actually we won't use them
         # [print(y_out.shape)
         return y_out   
 
+def connect_list(n_nodes, edges, device):
+    '''
+    return (N, k) where k is the maximum degree
+    '''
+    counts = torch.zeros(n_nodes, dtype=torch.int)# .to(device)
+    for edge in edges:
+        counts[edge[0]] += 1
+    k = counts.max()
+    print('max degrees', k)
+
+    connect_list = - torch.ones(n_nodes, k, dtype=torch.int).to(device)
+    for edge in edges:
+        connect_list[edge[0], counts[edge[0]] - 1] = edge[1]
+        counts[edge[0]] -= 1
+    
+    assert torch.all(counts == 0), "Counts should be a zero matrix after processing all edges"
+
+    return connect_list # in (N, k)
+
+
 def k_hop_neighbors(n_nodes, edges:torch.Tensor, k):
     # 创建有向图
     edges = edges.detach().cpu().numpy()

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
+# from backup_modules import connect_list
 
 
 class CustomActivationFunction(nn.Module): 
@@ -458,7 +459,7 @@ class GraphLearningModule(nn.Module):
     '''
     learning the directed and undirected weights from features
     '''
-    def __init__(self, T, n_nodes, nearest_nodes, n_heads, device, n_channels=None, sigma=6, Q1_init=1.2, Q2_init=0.8, M_init=1.5, shared_params=True) -> None:
+    def __init__(self, T, n_nodes, connect_list, nearest_nodes, n_heads, device, n_channels=None, sigma=6, Q1_init=1.2, Q2_init=0.8, M_init=1.5, shared_params=True) -> None:
         '''
         Args:
             u_edges (torch.Tensor) in (n_edges, 2) # nodes regularized
@@ -470,6 +471,7 @@ class GraphLearningModule(nn.Module):
         self.n_nodes = n_nodes
         self.device = device
         # construct d_edges, d_dist
+        self.connect_list = connect_list #(N, k)
         self.nearest_nodes = nearest_nodes
         # multi_heads
         self.n_heads = n_heads
@@ -511,9 +513,9 @@ class GraphLearningModule(nn.Module):
         # pad features
         # nn = self.nearest_nodes[:, 1:]
         pad_features = torch.zeros_like(features[:,:,0], device=self.device).unsqueeze(2)
-        pad_features = torch.cat((features, pad_features), dim=2)
+        pad_features = torch.cat((features, pad_features), dim=2) # in (B, T, N+1, n_heads, n_channels)
 
-        feature_j = pad_features[:,:,self.nearest_nodes[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)
+        feature_j = pad_features[:,:,self.connect_list.reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)
         # print(features.size(), feature_j.size())
 
         df = features.unsqueeze(3) - feature_j # in (B, T, N, k, n_heads, n_channels)
@@ -524,12 +526,13 @@ class GraphLearningModule(nn.Module):
 
         weights = torch.exp(- (Mdf ** 2).sum(-1)) # in (B, T, N, k, n_heads)
         # mask weights
-        mask = (self.nearest_nodes[:,1:] == -1).unsqueeze(0).unsqueeze(1).unsqueeze(4).repeat(B, T, 1, 1, self.n_heads)
-        weights = weights * (~mask)
+        mask = (self.connect_list == -1).unsqueeze(0).unsqueeze(1).unsqueeze(4).repeat(B, T, 1, 1, self.n_heads)
+        weights = weights * (~mask) # if mask true, weights = 0
 
         degree = weights.sum(3) # in (B, T, N, n_heads)
-        degree_j = degree[:,:,self.nearest_nodes[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads) # in (B, T, N, k, n_heads)
+        degree_j = degree[:,:,self.connect_list.reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads) # in (B, T, N, k, n_heads)
         degree_multiply = torch.sqrt(degree.unsqueeze(3) * degree_j)
+        
         inv_degree_multiply = torch.where(degree_multiply > 0, torch.ones((1,), device=self.device) / degree_multiply, torch.zeros((1,), device=self.device))
         inv_degree_multiply = torch.where(inv_degree_multiply == torch.inf, 0, inv_degree_multiply)
         weights = weights * inv_degree_multiply

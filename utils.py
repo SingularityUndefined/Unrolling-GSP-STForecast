@@ -229,11 +229,11 @@ def test(model, val_loader, data_normalization, masked_flag, args, device, signa
             if not use_one_channel:
                 rec_mse_d += ((x[:,:args.tin] - output[:,:args.tin]) ** 2).mean((0,1,2)).cpu().numpy()# .item()
             if masked_flag:
-                x, output = x[:,args.t_in:], output[:,args.tin:]
+                x, output = x[:,args.tin:], output[:,args.tin:]
             
-            if loss_fn is not None:
-                loss = loss_fn(output, x)
-                running_loss += loss.item()
+            # if loss_fn is not None:
+            #     loss = loss_fn(output, x)
+            #     running_loss += loss.item()
 
             
             # x, output = x[:,:,:,1], output[:,:,:,1]

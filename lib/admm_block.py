@@ -6,7 +6,7 @@ from lib.backup_modules import LR_guess, k_hop_neighbors
 
 class ADMMBlock(nn.Module):
 
-    def __init__(self, T, n_nodes, n_heads, n_channels, nearest_nodes, device,
+    def __init__(self, T, n_nodes, n_heads, n_channels, connect_list, nearest_nodes, device,
                  ADMM_info = {
                  'ADMM_iters':50,
                  'CG_iters': 3,
@@ -24,6 +24,7 @@ class ADMMBlock(nn.Module):
         self.n_heads = n_heads
         self.n_channels = n_channels
         # graphs (edges, edge weights)
+        self.connect_list = connect_list
         self.nearest_nodes = nearest_nodes.to(torch.int64)
         self.ablation = ablation
         assert self.ablation in ['None', 'DGLR', 'DGTV', 'UT'], 'ablation should be None, DGLR, DGTV or UT'
@@ -89,7 +90,7 @@ class ADMMBlock(nn.Module):
         # pad x
         pad_x = torch.zeros_like(x[:,:,0], device=self.device).unsqueeze(2)
         pad_x = torch.cat((x, pad_x), dim=2)
-        return x - (self.u_ew.unsqueeze(-1) * pad_x[:,:,self.nearest_nodes[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
+        return x - (self.u_ew.unsqueeze(-1) * pad_x[:,:,self.connect_list.reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
 
     def apply_op_Ldr(self, x):
         '''

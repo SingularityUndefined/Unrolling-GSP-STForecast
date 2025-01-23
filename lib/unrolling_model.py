@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from lib.graph_learning_module import GNNExtrapolation, FeatureExtractor, GraphLearningModule, GNNExtrapolation, GALExtrapolation
 from lib.admm_block import ADMMBlock
-from lib.backup_modules import layer_norm_on_data, layer_recovery_on_data, find_k_nearest_neighbors, SpatialTemporalEmbedding, LR_guess
+from lib.backup_modules import layer_norm_on_data, layer_recovery_on_data, find_k_nearest_neighbors, SpatialTemporalEmbedding, LR_guess, connect_list
 from torch.nn.parameter import Parameter
 
 class UnrollingModel(nn.Module):
@@ -60,6 +60,7 @@ class UnrollingModel(nn.Module):
         # define a graph connection pattern
         self.kNN = None
         self.nearsest_nodes, self.nearest_dists = find_k_nearest_neighbors(graph_info['n_nodes'], graph_info['u_edges'], graph_info['u_dist'], k_hop, device=self.device)
+        self.connect_list = connect_list(graph_info['n_nodes'], graph_info['u_edges'], self.device)
         self.use_extrapolation = use_extrapolation
         if self.use_extrapolation:
             self.use_old_extrapolation = use_old_extrapolation
@@ -118,6 +119,7 @@ class UnrollingModel(nn.Module):
                         n_nodes=graph_info['n_nodes'],
                         n_heads=n_heads,
                         n_channels=signal_rec_channels,
+                        connect_list=self.connect_list,
                         nearest_nodes=self.nearsest_nodes,
                         device=device,
                         ADMM_info=ADMM_info,
@@ -126,6 +128,7 @@ class UnrollingModel(nn.Module):
                     'graph_learning_module': GraphLearningModule(
                         T=T,
                         n_nodes=graph_info['n_nodes'],
+                        connect_list=self.connect_list,
                         nearest_nodes=self.nearsest_nodes,
                         n_heads=n_heads,
                         device=device,
