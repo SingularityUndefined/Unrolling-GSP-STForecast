@@ -90,7 +90,9 @@ class ADMMBlock(nn.Module):
         # pad x
         pad_x = torch.zeros_like(x[:,:,0], device=self.device).unsqueeze(2)
         pad_x = torch.cat((x, pad_x), dim=2)
-        return x - (self.u_ew.unsqueeze(-1) * pad_x[:,:,self.connect_list.reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
+        # print(self.u_ew.shape, self.nearest_nodes.shape)
+        return x - (self.u_ew.unsqueeze(-1) * pad_x[:,:,self.nearest_nodes[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
+        # return x - (self.u_ew.unsqueeze(-1) * pad_x[:,:,self.connect_list.reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
 
     def apply_op_Ldr(self, x):
         '''

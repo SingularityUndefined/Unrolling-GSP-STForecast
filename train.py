@@ -172,17 +172,17 @@ if args.use_stepLR:
     scheduler = lr_scheduler.StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
 
 # 创建文件处理器
-log_dir = f'../FINAL/logs_FINAL/{experiment_name}'
+log_dir = f'../FFinal/logs_FFinal/{experiment_name}'
 os.makedirs(log_dir, exist_ok=True)
 log_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.log'
 
 logger = setup_logger('logger1', os.path.join(log_dir, log_filename), logging.DEBUG, to_console=True)
 if args.loggrad:
-    grad_logger_dir = f'../FINAL/new_grad_logs_FINAL/{experiment_name}'
+    grad_logger_dir = f'../FFinal/new_grad_logs_FFinal/{experiment_name}'
     os.makedirs(grad_logger_dir, exist_ok=True)
     grad_logger = setup_logger('logger2', os.path.join(grad_logger_dir, log_filename), logging.INFO, to_console=False)
 
-debug_model_path = os.path.join(f'../FINAL/debug_models_FINAL/{experiment_name}', f'{dataset_name}/{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f')
+debug_model_path = os.path.join(f'../FFinal/debug_models_FFinal/{experiment_name}', f'{dataset_name}/{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f')
 
 # print('log dir', log_dir)
 logger.info('#################################################')
@@ -203,12 +203,12 @@ logger.info('--------BEGIN TRAINING PROCESS------------')
 
 grad_logger.info('------BEGIN TRAINING PROCESS-------')
 print('log dir', log_dir)
-model_dir = os.path.join(f'../FINAL/models_midparam/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
+model_dir = os.path.join(f'../FFinal/models_midparam/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
 os.makedirs(model_dir, exist_ok=True)
 masked_flag = False
 # train models
 # test = True
-plot_list = f'../FINAL/loss_curve_midparam/{experiment_name}'
+plot_list = f'../FFinal/loss_curve_midparam/{experiment_name}'
 os.makedirs(plot_list, exist_ok=True)
 plot_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.png'
 plot_path = os.path.join(plot_list, plot_filename)

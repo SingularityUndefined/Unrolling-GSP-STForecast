@@ -25,21 +25,21 @@ commands=(
     # "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 28  --loggrad 20 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGTV --flow"
     # "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 24  --loggrad 20 --cuda $cuda_device --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR"
 
-    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 16  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --flow"
-    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 28  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --ablation DGTV --flow"
-    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 24  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR --flow"
+    # "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 12  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --flow"
+    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 20  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --ablation DGTV --flow"
+    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 18  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR --flow"
 
-    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 16  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss MSE --flow --diffM"
-    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 28  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss MSE --ablation DGTV --flow --diffM"
-    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 24  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss MSE --ablation DGLR --diffM"
+    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 12  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss MSE --flow --diffM"
+    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 20  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss MSE --ablation DGTV --flow --diffM"
+    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 18  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss MSE --ablation DGLR --diffM"
 
-    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 16  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --flow --normloss"
-    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 28  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --ablation DGTV --flow --normloss"
-    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 24  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR --flow --normloss"
+    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 12  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --flow --normloss"
+    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 20  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --ablation DGTV --flow --normloss"
+    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 18  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss Huber --ablation DGLR --flow --normloss"
 
-    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 16  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss MSE --flow --diffM --normloss"
-    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 28  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss MSE --ablation DGTV --flow --diffM --normloss"
-    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 24  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss MSE --ablation DGLR --diffM --normloss"
+    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 12  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss MSE --flow --diffM --normloss"
+    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 20  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss MSE --ablation DGTV --flow --diffM --normloss"
+    "$python_path train.py --dataset PEMS08 --hop 4 --batchsize 18  --loggrad 20 --cuda $cuda_device --lr 1e-4 --clamp 0.8 --extrapolation --loss MSE --ablation DGLR --diffM --normloss"
 )
 
 # 日志文件
