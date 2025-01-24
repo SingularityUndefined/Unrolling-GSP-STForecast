@@ -196,12 +196,14 @@ def connect_list(n_nodes, edges, device):
     k = counts.max()
     print('max degrees', k)
 
-    connect_list = - torch.ones(n_nodes, k, dtype=torch.int).to(device)
+    connect_list = - torch.ones(n_nodes, k + 1, dtype=torch.int).to(device)
     for edge in edges:
-        connect_list[edge[0], counts[edge[0]] - 1] = edge[1]
+        connect_list[edge[0], counts[edge[0]]] = edge[1]
         counts[edge[0]] -= 1
     
     assert torch.all(counts == 0), "Counts should be a zero matrix after processing all edges"
+    assert torch.all(connect_list[:,0] == -1), "connect list should be all -1 in the first row when not finished"
+    connect_list[:,0] = torch.arange(n_nodes).to(device)
 
     return connect_list # in (N, k)
 

@@ -500,7 +500,43 @@ class GraphLearningModule(nn.Module):
         self.multiQ2 = Parameter(multiQ2_init, requires_grad=True)
         self.multiM = Parameter(multiM_init, requires_grad=True) # in (n_heads, n_channels, n_channels)
 
-#######################################ORIGINAL VERSION #######################################
+# #######################################ORIGINAL VERSION #######################################
+#     def undirected_graph_from_features(self, features):
+#         '''
+#         Args:
+#             features (torch.Tensor) in (-1, T, n_nodes, n_heads, n_channels)
+#         Returns:
+#             u_edges in (-1, T, n_edges, n_heads)
+#         '''
+#         B, T = features.size(0), features.size(1)
+#         weights = {}
+
+#         # pad features
+#         # nn = self.nearest_nodes[:, 1:]
+#         pad_features = torch.zeros_like(features[:,:,0], device=self.device).unsqueeze(2)
+#         pad_features = torch.cat((features, pad_features), dim=2)
+
+#         feature_j = pad_features[:,:,self.nearest_nodes[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)
+#         # print(features.size(), feature_j.size())
+
+#         df = features.unsqueeze(3) - feature_j # in (B, T, N, k, n_heads, n_channels)
+#         Mdf = torch.einsum('hij, btnehj -> btnehi', self.multiM, df) # in (B, T, N, k, n_heads, n_channels)
+#         weights = torch.exp(- (Mdf ** 2).sum(-1)) # in (B, T, N, k, n_heads)
+#         # mask weights
+#         mask = (self.nearest_nodes[:,1:] == -1).unsqueeze(0).unsqueeze(1).unsqueeze(4).repeat(B, T, 1, 1, self.n_heads)
+#         weights = weights * (~mask)
+
+#         degree = weights.sum(3) # in (B, T, N, n_heads)
+#         degree_j = degree[:,:,self.nearest_nodes[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads) # in (B, T, N, k, n_heads)
+#         degree_multiply = torch.sqrt(degree.unsqueeze(3) * degree_j)
+#         inv_degree_multiply = torch.where(degree_multiply > 0, torch.ones((1,), device=self.device) / degree_multiply, torch.zeros((1,), device=self.device))
+#         inv_degree_multiply = torch.where(inv_degree_multiply == torch.inf, 0, inv_degree_multiply)
+#         weights = weights * inv_degree_multiply
+#         # print('undirected_weights', weights.shape)
+#         return weights # in (B, T, N, k, n_heads)
+
+
+################################## REAL GRAPH VERSION #################################################
     def undirected_graph_from_features(self, features):
         '''
         Args:
@@ -514,68 +550,33 @@ class GraphLearningModule(nn.Module):
         # pad features
         # nn = self.nearest_nodes[:, 1:]
         pad_features = torch.zeros_like(features[:,:,0], device=self.device).unsqueeze(2)
-        pad_features = torch.cat((features, pad_features), dim=2)
+        pad_features = torch.cat((features, pad_features), dim=2) # in (B, T, N+1, n_heads, n_channels)
 
-        feature_j = pad_features[:,:,self.nearest_nodes[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)
+        feature_j = pad_features[:,:,self.connect_list[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)
         # print(features.size(), feature_j.size())
 
         df = features.unsqueeze(3) - feature_j # in (B, T, N, k, n_heads, n_channels)
-        Mdf = torch.einsum('hij, btnehj -> btnehi', self.multiM, df) # in (B, T, N, k, n_heads, n_channels)
+        if self.shared_params:
+            Mdf = torch.einsum('hij, btnehj -> btnehi', self.multiM, df) # in (B, T, N, k, n_heads, n_channels)
+        else:
+            Mdf = torch.einsum('thij, btnehj -> btnehi', self.multiM, df)
+
         weights = torch.exp(- (Mdf ** 2).sum(-1)) # in (B, T, N, k, n_heads)
         # mask weights
-        mask = (self.nearest_nodes[:,1:] == -1).unsqueeze(0).unsqueeze(1).unsqueeze(4).repeat(B, T, 1, 1, self.n_heads)
-        weights = weights * (~mask)
+        mask = (self.connect_list[:,1:] == -1).unsqueeze(0).unsqueeze(1).unsqueeze(4).repeat(B, T, 1, 1, self.n_heads)
+        weights = weights * (~mask) # if mask true, weights = 0
 
         degree = weights.sum(3) # in (B, T, N, n_heads)
-        degree_j = degree[:,:,self.nearest_nodes[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads) # in (B, T, N, k, n_heads)
+        degree_j = degree[:,:,self.connect_list[:, 1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads) # in (B, T, N, k, n_heads)
         degree_multiply = torch.sqrt(degree.unsqueeze(3) * degree_j)
+
         inv_degree_multiply = torch.where(degree_multiply > 0, torch.ones((1,), device=self.device) / degree_multiply, torch.zeros((1,), device=self.device))
         inv_degree_multiply = torch.where(inv_degree_multiply == torch.inf, 0, inv_degree_multiply)
         weights = weights * inv_degree_multiply
         # print('undirected_weights', weights.shape)
         return weights # in (B, T, N, k, n_heads)
-
-
-################################### REAL GRAPH VERSION #################################################
-    # def undirected_graph_from_features(self, features):
-    #     '''
-    #     Args:
-    #         features (torch.Tensor) in (-1, T, n_nodes, n_heads, n_channels)
-    #     Returns:
-    #         u_edges in (-1, T, n_edges, n_heads)
-    #     '''
-    #     B, T = features.size(0), features.size(1)
-    #     weights = {}
-
-    #     # pad features
-    #     # nn = self.nearest_nodes[:, 1:]
-    #     pad_features = torch.zeros_like(features[:,:,0], device=self.device).unsqueeze(2)
-    #     pad_features = torch.cat((features, pad_features), dim=2) # in (B, T, N+1, n_heads, n_channels)
-
-    #     feature_j = pad_features[:,:,self.connect_list.reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)
-    #     # print(features.size(), feature_j.size())
-
-    #     df = features.unsqueeze(3) - feature_j # in (B, T, N, k, n_heads, n_channels)
-    #     if self.shared_params:
-    #         Mdf = torch.einsum('hij, btnehj -> btnehi', self.multiM, df) # in (B, T, N, k, n_heads, n_channels)
-    #     else:
-    #         Mdf = torch.einsum('thij, btnehj -> btnehi', self.multiM, df)
-
-    #     weights = torch.exp(- (Mdf ** 2).sum(-1)) # in (B, T, N, k, n_heads)
-    #     # mask weights
-    #     mask = (self.connect_list == -1).unsqueeze(0).unsqueeze(1).unsqueeze(4).repeat(B, T, 1, 1, self.n_heads)
-    #     weights = weights * (~mask) # if mask true, weights = 0
-
-    #     degree = weights.sum(3) # in (B, T, N, n_heads)
-    #     degree_j = degree[:,:,self.connect_list.reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads) # in (B, T, N, k, n_heads)
-    #     degree_multiply = torch.sqrt(degree.unsqueeze(3) * degree_j)
-
-    #     inv_degree_multiply = torch.where(degree_multiply > 0, torch.ones((1,), device=self.device) / degree_multiply, torch.zeros((1,), device=self.device))
-    #     inv_degree_multiply = torch.where(inv_degree_multiply == torch.inf, 0, inv_degree_multiply)
-    #     weights = weights * inv_degree_multiply
-    #     # print('undirected_weights', weights.shape)
-    #     return weights # in (B, T, N, k, n_heads)
 ###############################TODO #####################################
+
     def directed_graph_from_features(self, features):
         '''
         Args:
@@ -589,7 +590,7 @@ class GraphLearningModule(nn.Module):
         pad_features = torch.zeros_like(features[:,:,0], device=self.device).unsqueeze(2)
         pad_features = torch.cat((features, pad_features), dim=2)
 
-        feature_i = pad_features[:,:-1, self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels) # in (B, T-1, N, k, n_heads, n_channels)
+        feature_i = pad_features[:,:-1, self.connect_list.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels) # in (B, T-1, N, k, n_heads, n_channels)
         feature_j = features[:,1:] # in (B, T-1, N, n_heads, n_channels)
         if self.shared_params:
             Q_i = torch.einsum('hij, btnehj -> btnehi', self.multiQ1, feature_i)
@@ -603,7 +604,7 @@ class GraphLearningModule(nn.Module):
         assert not torch.isnan(Q_i).any(), f'Q_i has NaN value: Q1 in ({self.multiQ1.max().item():.4f}, {self.multiQ1.min().item():.4f}, features in ({feature_i.max()}, {feature_i.min()})'
         weights = torch.exp(- (Q_i * Q_j.unsqueeze(3)).sum(-1)) # in (B, T-1, N, k, n_heads)
         # mask unused weights
-        mask = (self.nearest_nodes == -1).unsqueeze(0).unsqueeze(1).unsqueeze(4).repeat(B, T-1, 1, 1, self.n_heads)
+        mask = (self.connect_list == -1).unsqueeze(0).unsqueeze(1).unsqueeze(4).repeat(B, T-1, 1, 1, self.n_heads)
         weights = weights * (~mask)
         in_degree = weights.sum(3)
         # print('in_degree', in_degree.max(), in_degree.min(), torch.isnan(in_degree).any())
@@ -613,6 +614,44 @@ class GraphLearningModule(nn.Module):
         weights = weights * inv_in_degree.unsqueeze(3)
         # print(weights.max(), weights.min(), torch.isnan(weights).any())
         return weights
+ ############################################Original Version ###############################################
+    # def directed_graph_from_features(self, features):
+    #     '''
+    #     Args:
+    #         features (torch.Tensor) in (-1, T, n_nodes, n_features)
+    #     Return:
+    #         u_edges in (-1, T-1, n_edges, n_heads)
+    #     '''
+    #     B, T = features.size(0), features.size(1)
+    #     weights = {}
+    #     # pad features
+    #     pad_features = torch.zeros_like(features[:,:,0], device=self.device).unsqueeze(2)
+    #     pad_features = torch.cat((features, pad_features), dim=2)
+
+    #     feature_i = pad_features[:,:-1, self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels) # in (B, T-1, N, k, n_heads, n_channels)
+    #     feature_j = features[:,1:] # in (B, T-1, N, n_heads, n_channels)
+    #     if self.shared_params:
+    #         Q_i = torch.einsum('hij, btnehj -> btnehi', self.multiQ1, feature_i)
+    #         Q_j = torch.einsum('hij, btnhj -> btnhi', self.multiQ2, feature_j)
+    #     else:
+    #         Q_i = torch.einsum('thij, btnehj -> btnehi', self.multiQ1, feature_i)
+    #         Q_j = torch.einsum('thij, btnhj -> btnhi', self.multiQ2, feature_j)
+
+    #     # print('Qi,Qj', Q_i.shape, Q_j.shape)
+    #     assert not torch.isnan(Q_j).any(), f'Q_j has NaN value: Q2 in ({self.multiQ2.max().item():.4f}, {self.multiQ2.min().item():.4f}; features in ({feature_j.max().item()}, {feature_j.min().item()}))'
+    #     assert not torch.isnan(Q_i).any(), f'Q_i has NaN value: Q1 in ({self.multiQ1.max().item():.4f}, {self.multiQ1.min().item():.4f}, features in ({feature_i.max()}, {feature_i.min()})'
+    #     weights = torch.exp(- (Q_i * Q_j.unsqueeze(3)).sum(-1)) # in (B, T-1, N, k, n_heads)
+    #     # mask unused weights
+    #     mask = (self.nearest_nodes == -1).unsqueeze(0).unsqueeze(1).unsqueeze(4).repeat(B, T-1, 1, 1, self.n_heads)
+    #     weights = weights * (~mask)
+    #     in_degree = weights.sum(3)
+    #     # print('in_degree', in_degree.max(), in_degree.min(), torch.isnan(in_degree).any())
+    #     inv_in_degree = torch.where(in_degree > 0, torch.ones((1,), device=self.device) / in_degree, torch.zeros((1,), device=self.device))
+    #     inv_in_degree = torch.where(inv_in_degree == torch.inf, torch.zeros((1), device=self.device), inv_in_degree)
+    #     # print('inv_in_degree', inv_in_degree.max(), inv_in_degree.min(), torch.isnan(inv_in_degree).any())
+    #     weights = weights * inv_in_degree.unsqueeze(3)
+    #     # print(weights.max(), weights.min(), torch.isnan(weights).any())
+    #     return weights
     ############################### MODIFIED HERE #####################################
     def undirected_temporal_graph_from_features(self, features):
         # we need to construct symmetric weights from the cross-frame features

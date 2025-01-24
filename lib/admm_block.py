@@ -91,8 +91,8 @@ class ADMMBlock(nn.Module):
         pad_x = torch.zeros_like(x[:,:,0], device=self.device).unsqueeze(2)
         pad_x = torch.cat((x, pad_x), dim=2)
         # print(self.u_ew.shape, self.nearest_nodes.shape)
-        return x - (self.u_ew.unsqueeze(-1) * pad_x[:,:,self.nearest_nodes[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
-        # return x - (self.u_ew.unsqueeze(-1) * pad_x[:,:,self.connect_list.reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
+        # return x - (self.u_ew.unsqueeze(-1) * pad_x[:,:,self.nearest_nodes[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
+        return x - (self.u_ew.unsqueeze(-1) * pad_x[:,:,self.connect_list[:, 1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
 
     def apply_op_Ldr(self, x):
         '''
@@ -102,7 +102,8 @@ class ADMMBlock(nn.Module):
         pad_x = torch.zeros_like(x[:,:,0], device=self.device).unsqueeze(2)
         pad_x = torch.cat((x, pad_x), dim=2)
         y = torch.zeros_like(x, device=self.device)
-        y[:,1:] = x[:,1:] - (self.d_ew.unsqueeze(-1) * pad_x[:,:-1,self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
+        y[:,1:] = x[:,1:] - (self.d_ew.unsqueeze(-1) * pad_x[:,:-1,self.connect_list.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
+        # y[:,1:] = x[:,1:] - (self.d_ew.unsqueeze(-1) * pad_x[:,:-1,self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
         return y
 
     def apply_op_Ldr_T(self, x):
@@ -117,18 +118,19 @@ class ADMMBlock(nn.Module):
         # print('apply Ldr T: x, nn', x.size(), self.nearest_nodes.size())
 
         ##### CHANGED HERE##############################################
-        holder = self.d_ew.unsqueeze(-1) * x[:,1:].unsqueeze(3) # in (B, T-1, N, k, n_heads, n_channels)
-        in_features = torch.zeros((B, T-1, self.n_nodes + 1, self.n_heads, self.n_channels), device=self.device)
-        index = self.nearest_nodes.reshape(-1).unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).repeat(B, T-1, 1, self.n_heads, self.n_channels)
-        index[index == -1] = self.n_nodes
+        # holder = self.d_ew.unsqueeze(-1) * x[:,1:].unsqueeze(3) # in (B, T-1, N, k, n_heads, n_channels)
+        # in_features = torch.zeros((B, T-1, self.n_nodes + 1, self.n_heads, self.n_channels), device=self.device)
+        # index = self.nearest_nodes.reshape(-1).unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).repeat(B, T-1, 1, self.n_heads, self.n_channels)
+        # # index = self.nearest_nodes.reshape(-1).unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).repeat(B, T-1, 1, self.n_heads, self.n_channels)
+        # index[index == -1] = self.n_nodes
 
-        if torch.any(index < 0) or torch.any(index >= in_features.size(2)):
-            raise ValueError("Index out of bounds")
+        # if torch.any(index < 0) or torch.any(index >= in_features.size(2)):
+        #     raise ValueError("Index out of bounds")
         ## TODO #################
-        in_features = in_features.scatter_add(2, index, holder.view(B, T-1, -1, self.n_heads, self.n_channels))
-        in_features = in_features[:,:,:-1]
+        # in_features = in_features.scatter_add(2, index, holder.view(B, T-1, -1, self.n_heads, self.n_channels))
+        # in_features = in_features[:,:,:-1]
         ############### ORIGINAL Version ###############
-        # in_features = (self.d_ew.unsqueeze(-1) * pad_x[:, 1:, self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3) # in (B, T-1, N, n_heads, n_channels)
+        in_features = (self.d_ew.unsqueeze(-1) * pad_x[:, 1:, self.connect_list.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3) # in (B, T-1, N, n_heads, n_channels)
  ####################################
         y = x.clone()
         y[:,0] = torch.zeros_like(x[:,0])
