@@ -11,6 +11,7 @@ from utils import *
 import argparse
 from collections import Counter
 import sys
+from tensorboardX import SummaryWriter
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--cuda', help='CUDA device', type=int)
@@ -171,18 +172,22 @@ elif args.optim == 'adamw':
 if args.use_stepLR:
     scheduler = lr_scheduler.StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
 
+tensorboard_logdir = f'../FebLog/Tensorboard/{experiment_name}'
+os.makedirs(tensorboard_logdir, exist_ok=True)
+writer = SummaryWriter(tensorboard_logdir)
+
 # 创建文件处理器
-log_dir = f'../FFinal/logs_FFinal/{experiment_name}'
+log_dir = f'../FebLog/trainLogs/{experiment_name}'
 os.makedirs(log_dir, exist_ok=True)
 log_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.log'
 
 logger = setup_logger('logger1', os.path.join(log_dir, log_filename), logging.DEBUG, to_console=True)
 if args.loggrad:
-    grad_logger_dir = f'../FFinal/new_grad_logs_FFinal/{experiment_name}'
+    grad_logger_dir = f'../FebLog/gradLogs/{experiment_name}'
     os.makedirs(grad_logger_dir, exist_ok=True)
     grad_logger = setup_logger('logger2', os.path.join(grad_logger_dir, log_filename), logging.INFO, to_console=False)
 
-debug_model_path = os.path.join(f'../FFinal/debug_models_FFinal/{experiment_name}', f'{dataset_name}/{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f')
+debug_model_path = os.path.join(f'../FebLog/debug_models_FebLog/{experiment_name}', f'{dataset_name}/{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f')
 
 # print('log dir', log_dir)
 logger.info('#################################################')
@@ -203,12 +208,12 @@ logger.info('--------BEGIN TRAINING PROCESS------------')
 
 grad_logger.info('------BEGIN TRAINING PROCESS-------')
 print('log dir', log_dir)
-model_dir = os.path.join(f'../FFinal/models_midparam/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
+model_dir = os.path.join(f'../FebLog/models/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
 os.makedirs(model_dir, exist_ok=True)
 masked_flag = False
 # train models
 # test = True
-plot_list = f'../FFinal/loss_curve_midparam/{experiment_name}'
+plot_list = f'../FebLog/loss_curve_midparam/{experiment_name}'
 os.makedirs(plot_list, exist_ok=True)
 plot_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.png'
 plot_path = os.path.join(plot_list, plot_filename)
@@ -220,25 +225,27 @@ for epoch in range(num_epochs):
     # TODO: remember to / 50 # don't need now
     model.train()
     running_loss = 0
+    rmse_per_time = torch.zeros((T,)).to(device)
+    rmse_sep = 0
     rec_mse = 0
     pred_mse = 0
     pred_mae = 0
     pred_mape = 0
     nearest_loss = 0
 
-    iteration_count = 0
+    # iteration_count = 0
 
-    for y, x, t_list in tqdm(train_loader):
-        # print(y.shape, x.shape)
+    for iter_idx, (y, x, t_list) in enumerate(tqdm(train_loader)):
+        iteration_count = iter_idx + 1
         optimizer.zero_grad()
-        y, x, t_list = y.to(device), x.to(device), t_list.to(device) # y in (B, t, nodes, 1)
+        y, x, t_list = y.to(device), x.to(device), t_list.to(device)  # y in (B, t, nodes, 1)
         # normalization
 
         normed_y = data_normalization.normalize_data(y)
         normed_x = data_normalization.normalize_data(x, args.use_one_channel)
 
         try:
-            normed_output = model(normed_y, t_list) # in (B, T, nodes, 1)
+            normed_output = model(normed_y, t_list)  # in (B, T, nodes, 1)
             # raise ValueError('raised value error')
         except ValueError as ve:
             # plot the loss curve from loss_list
@@ -251,7 +258,7 @@ for epoch in range(num_epochs):
             if not args.use_one_channel:
                 metrics, metrics_d = test(model, test_loader, data_normalization, False, args, device, signal_channels, use_one_channel=False)
             else:
-                metrics = test(model, test_loader, data_normalization, False, logger, args, device, signal_channels, use_one_channel=True)
+                metrics = test(model, test_loader, data_normalization, False, args, device, signal_channels, use_one_channel=True)
 
             logger.info('Test (ALL): rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', metrics['rec_RMSE'], metrics['pred_RMSE'], metrics['pred_MAE'], metrics['pred_MAPE'])
 
@@ -259,9 +266,8 @@ for epoch in range(num_epochs):
                 for i in range(signal_channels):
                     logger.info('Test (%s): rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', signal_list[i], metrics_d['rec_RMSE'][i], metrics_d['pred_RMSE'][i], metrics_d['pred_MAE'][i], metrics_d['pred_MAPE'][i])
 
-
             raise ValueError(f'Error in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}') from ve
-        
+
         # recover data
         if args.normed_loss:
             if masked_flag:
@@ -276,35 +282,46 @@ for epoch in range(num_epochs):
         else:
             output = data_normalization.recover_data(normed_output, args.use_one_channel)
             if masked_flag:
-                loss = loss_fn(output[:,t_in:], x[:,t_in:])
+                loss = loss_fn(output[:, t_in:], x[:, t_in:])
             else:
                 loss = loss_fn(output, x)
             loss.backward()
             optimizer.step()
         # if args.mode == 'normalize':
-        #     output = nn.ReLU()(output)# [:,:,:,:signal_channels]
-            # print('x, output shape', x.size(), output.size())
-        rec_mse += ((x[:,:t_in] - output[:,:t_in]) ** 2).mean().item()
+        #     output = nn.ReLU()(output)  # [:,:,:,:signal_channels]
+        # print('x, output shape', x.size(), output.size())
+        rec_mse += ((x[:, :t_in] - output[:, :t_in]) ** 2).mean().item()
         # only unknowns
         if masked_flag:
-            x, output = x[:,t_in:], output[:,t_in:]
-
+            x, output = x[:, t_in:], output[:, t_in:]
 
         if torch.isnan(loss).any():
             logger.error(f'Loss is NaN in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]')
             raise ValueError(f'Loss is NaN in [Epoch {epoch}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]')
-        # loss.backward()       
-        # optimizer.step()
-        iteration_count += 1
+        # iteration_count += 1
 
         log_gradients(epoch, num_epochs, iteration_count, train_loader, model, grad_logger, args)
-        
+
         if args.clamp > 0:
             model.clamp_param(args.clamp, args.clamp)
         elif args.clamp == 0:
             model.clamp_param()
         if args.debug:
             torch.save(model.state_dict(), debug_model_path)
+
+        rmse_per_time += ((x - output) ** 2).mean((0,2,3))
+        rmse_sep += loss.item()
+        if iteration_count % (len(train_loader) // 40) == 0:
+            rmse_checkpoint = torch.sqrt(rmse_per_time / (len(train_loader) // 40))
+            rec_rmse_dict = {f'time_{i:02d}': rmse_checkpoint[i] for i in range(t_in)}
+            writer.add_scalars('rec_RMSE_per_step', rec_rmse_dict, epoch * len(train_loader) + iteration_count)
+            pred_rmse_dict = {f'time_{i:02d}': rmse_checkpoint[i] for i in range(t_in, T)}
+            writer.add_scalars('pred_RMSE_per_step', pred_rmse_dict, epoch * len(train_loader) + iteration_count)
+            rmse_dict = {f'time_{i:02d}': rmse_checkpoint[i] for i in range(T)}
+            writer.add_scalars('RMSE_per_step', rmse_dict, epoch * len(train_loader) + iteration_count)
+            writer.add_scalar('Loss_batch', rmse_sep / (len(train_loader) // 40), epoch * len(train_loader) + iteration_count)
+            rmse_per_time = rmse_per_time * 0
+            rmse_sep = 0
         # loggers
         running_loss += loss.item()
         # with torch.no_grad():
@@ -316,8 +333,8 @@ for epoch in range(num_epochs):
             pred_mape += (torch.abs(output[mask] - x[mask]) / x[mask]).mean().item() * 100
             nearest_loss += ((x[:, 0] - output[:, 0]) ** 2).mean().item()
         else:
-            x_pred = x[:,t_in:]
-            output_pred = output[:,t_in:]   
+            x_pred = x[:, t_in:]
+            output_pred = output[:, t_in:]
             mask = (x_pred > 1e-8)
             pred_mse += ((x_pred - output_pred) ** 2).mean().item()
             pred_mae += (torch.abs(output_pred - x_pred)).mean().item()
@@ -365,7 +382,7 @@ for epoch in range(num_epochs):
         if not args.use_one_channel:
             for i in range(signal_channels):
                 logger.info('Channel %s:\t rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', signal_list[i], metric_d['rec_RMSE'][i], metric_d['pred_RMSE'][i], metric_d['pred_MAE'][i], metric_d['pred_MAPE'][i])
-        # save models
+        # save model dicts
         torch.save(model.state_dict(), os.path.join(model_dir, f'val_{epoch+1}.pth'))
 
 plot_loss_curve(train_loss_list, val_loss_list, plot_path)

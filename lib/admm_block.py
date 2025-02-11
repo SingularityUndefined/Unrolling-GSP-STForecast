@@ -73,6 +73,7 @@ class ADMMBlock(nn.Module):
         if self.ablation != 'DGLR':
             self.alpha_zd = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.alpha_zd_init, requires_grad=True)
             self.beta_zd = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.beta_zd_init, requires_grad=True)
+
         # PGD params: for now we directly solve phi^{tau+1}
         # self.epsilon_init = 0.1
         # self.epsilon = Parameter(torch.ones((self.ADMM_iters, self.PGD_iters), device=self.device) * self.epsilon_init, requires_grad=True)
@@ -91,8 +92,8 @@ class ADMMBlock(nn.Module):
         pad_x = torch.zeros_like(x[:,:,0], device=self.device).unsqueeze(2)
         pad_x = torch.cat((x, pad_x), dim=2)
         # print(self.u_ew.shape, self.nearest_nodes.shape)
-        # return x - (self.u_ew.unsqueeze(-1) * pad_x[:,:,self.nearest_nodes[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
-        return x - (self.u_ew.unsqueeze(-1) * pad_x[:,:,self.connect_list[:, 1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
+        return x - (self.u_ew.unsqueeze(-1) * pad_x[:,:,self.nearest_nodes[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
+        # return x - (self.u_ew.unsqueeze(-1) * pad_x[:,:,self.connect_list[:, 1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
 
     def apply_op_Ldr(self, x):
         '''
@@ -102,8 +103,8 @@ class ADMMBlock(nn.Module):
         pad_x = torch.zeros_like(x[:,:,0], device=self.device).unsqueeze(2)
         pad_x = torch.cat((x, pad_x), dim=2)
         y = torch.zeros_like(x, device=self.device)
-        y[:,1:] = x[:,1:] - (self.d_ew.unsqueeze(-1) * pad_x[:,:-1,self.connect_list.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
-        # y[:,1:] = x[:,1:] - (self.d_ew.unsqueeze(-1) * pad_x[:,:-1,self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
+        # y[:,1:] = x[:,1:] - (self.d_ew.unsqueeze(-1) * pad_x[:,:-1,self.connect_list.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
+        y[:,1:] = x[:,1:] - (self.d_ew.unsqueeze(-1) * pad_x[:,:-1,self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
         return y
 
     def apply_op_Ldr_T(self, x):
@@ -113,24 +114,23 @@ class ADMMBlock(nn.Module):
         # print('x', x.size())
         assert not torch.isnan(x).any(), 'Ldr T x input x has NaN value'
         B, T = x.size(0), x.size(1)
-        pad_x = torch.zeros_like(x[:,:,0], device=self.device).unsqueeze(2)
-        pad_x = torch.cat((x, pad_x), dim=2)
         # print('apply Ldr T: x, nn', x.size(), self.nearest_nodes.size())
 
-        ##### CHANGED HERE##############################################
-        # holder = self.d_ew.unsqueeze(-1) * x[:,1:].unsqueeze(3) # in (B, T-1, N, k, n_heads, n_channels)
-        # in_features = torch.zeros((B, T-1, self.n_nodes + 1, self.n_heads, self.n_channels), device=self.device)
+        ##### KNN Version ##############################################
+        holder = self.d_ew.unsqueeze(-1) * x[:,1:].unsqueeze(3) # in (B, T-1, N, k, n_heads, n_channels)
+        in_features = torch.zeros((B, T-1, self.n_nodes + 1, self.n_heads, self.n_channels), device=self.device)
+        index = self.nearest_nodes.reshape(-1).unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).repeat(B, T-1, 1, self.n_heads, self.n_channels)
         # index = self.nearest_nodes.reshape(-1).unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).repeat(B, T-1, 1, self.n_heads, self.n_channels)
-        # # index = self.nearest_nodes.reshape(-1).unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).repeat(B, T-1, 1, self.n_heads, self.n_channels)
-        # index[index == -1] = self.n_nodes
+        index[index == -1] = self.n_nodes
 
-        # if torch.any(index < 0) or torch.any(index >= in_features.size(2)):
-        #     raise ValueError("Index out of bounds")
-        ## TODO #################
-        # in_features = in_features.scatter_add(2, index, holder.view(B, T-1, -1, self.n_heads, self.n_channels))
-        # in_features = in_features[:,:,:-1]
-        ############### ORIGINAL Version ###############
-        in_features = (self.d_ew.unsqueeze(-1) * pad_x[:, 1:, self.connect_list.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3) # in (B, T-1, N, n_heads, n_channels)
+        if torch.any(index < 0) or torch.any(index >= in_features.size(2)):
+            raise ValueError("Index out of bounds")
+        in_features = in_features.scatter_add(2, index, holder.view(B, T-1, -1, self.n_heads, self.n_channels))
+        in_features = in_features[:,:,:-1]
+        ############### SYMMETRIC Version ###############
+        # pad_x = torch.zeros_like(x[:,:,0], device=self.device).unsqueeze(2)
+        # pad_x = torch.cat((x, pad_x), dim=2)
+        # in_features = (self.d_ew.unsqueeze(-1) * pad_x[:, 1:, self.connect_list.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3) # in (B, T-1, N, n_heads, n_channels)
  ####################################
         y = x.clone()
         y[:,0] = torch.zeros_like(x[:,0])
@@ -290,6 +290,7 @@ class ADMMBlock(nn.Module):
         '''
         # primal guess x
         if y.size(1) < self.T:# actually not used
+            print('used LR guess in forward')
             x = LR_guess(y, self.T, self.device)
         else:
             assert mask is not None, 'mask should be t for sequential inputs'
