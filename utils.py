@@ -86,10 +86,10 @@ class Normalization():
     def __init__(self, dataset:TrafficDataset, mode:str, device):
         assert mode in ['normalize', 'standardize'], 'mode should be in [normalize, standardize]'
         self.mode = mode
-        if mode == 'normalize':
+        if mode == 'standardize':
             self.mean = torch.Tensor(dataset.data.mean(0)).to(device)
             self.std = torch.Tensor(dataset.data.std(0)).to(device)
-        elif mode == 'standardize':
+        elif mode == 'normalize':
             self.min = torch.Tensor(dataset.data.min(0)).to(device)
             self.max = torch.Tensor(dataset.data.max(0)).to(device)
 
@@ -97,12 +97,12 @@ class Normalization():
         '''
         *args = (mean, std) or *args = (min, max)
         '''
-        if self.mode == 'normalize':
+        if self.mode == 'standardize':
             if use_one_channel:
                 return (x - self.mean[...,0:1]) / self.std[...,0:1]
             else:
                 return (x - self.mean) / self.std
-        elif self.mode == 'standardize':
+        elif self.mode == 'normalize':
             if use_one_channel:
                 return (x - self.min[...,0:1]) / (self.max[...,0:1] - self.min[...,0:1])
             else:
@@ -110,14 +110,14 @@ class Normalization():
         
     def recover_data(self, x, use_one_channel=False):
         if use_one_channel:
-            if self.mode == 'normalize':
+            if self.mode == 'standardize':
                 return x * self.std[...,0:1] + self.mean[...,0:1]
-            elif self.mode == 'standardize':
+            elif self.mode == 'normalize':
                 return x * (self.max[...,0:1] - self.min[...,0:1]) + self.min[...,0:1]
         else:
-            if self.mode == 'normalize':
+            if self.mode == 'standardize':
                 return x * self.std + self.mean
-            elif self.mode == 'standardize':
+            elif self.mode == 'normalize':
                 return x * (self.max - self.min) + self.min
         
 def plot_loss_curve(train_loss, val_loss, save_path, val_freq=5, use_log=False):
@@ -137,20 +137,21 @@ def plot_loss_curve(train_loss, val_loss, save_path, val_freq=5, use_log=False):
 def log_gradients(epoch, num_epochs, iteration_count, train_loader, model, grad_logger, args):
     if (iteration_count + 1) % args.loggrad == 0:
         grad_logger.info(f'[Epoch {epoch}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]')
-    if (iteration_count + 1) % 60 == 0 and args.debug:
+    # when debug, print every (3 * args.loggrad) iterations to console
+    if (iteration_count + 1) % (3 * args.loggrad) == 0 and args.debug:
         print(f'[Epoch {epoch}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]')
 
     for name, param in model.named_parameters():
         if 'agg' in name and 'weight' in name:
             if (iteration_count + 1) % args.loggrad == 0:
                 grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
-            if (iteration_count + 1) % 60 == 0 and args.debug:
+            if (iteration_count + 1) % (3 * args.loggrad) == 0 and args.debug:
                 print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
 
         if model.use_extrapolation and model.use_old_extrapolation and 'linear_extrapolation' in name:
             if (iteration_count + 1) % args.loggrad == 0:
                 grad_logger.info(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
-            if (iteration_count + 1) % 60 == 0 and args.debug:
+            if (iteration_count + 1) % (3 * args.loggrad) == 0 and args.debug:
                 print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
 
 def print_gradients(model):

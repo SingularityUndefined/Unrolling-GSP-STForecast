@@ -519,7 +519,11 @@ class GraphLearningModule(nn.Module):
         # print(features.size(), feature_j.size())
 
         df = features.unsqueeze(3) - feature_j # in (B, T, N, k, n_heads, n_channels)
-        Mdf = torch.einsum('hij, btnehj -> btnehi', self.multiM, df) # in (B, T, N, k, n_heads, n_channels)
+        # print(self.multiM.size(), df.size())
+        if self.shared_params:
+            Mdf = torch.einsum('hij, btnehj -> btnehi', self.multiM, df)
+        else:
+            Mdf = torch.einsum('thij, btnehj -> btnehi', self.multiM, df) # in (B, T, N, k, n_heads, n_channels)
         weights = torch.exp(- (Mdf ** 2).sum(-1)) # in (B, T, N, k, n_heads)
         # mask weights
         mask = (self.nearest_nodes[:,1:] == -1).unsqueeze(0).unsqueeze(1).unsqueeze(4).repeat(B, T, 1, 1, self.n_heads)

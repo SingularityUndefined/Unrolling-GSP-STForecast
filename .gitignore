@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 lib/__pycache__/
+command_log/
+*.log
+lib_old/
+logs/
