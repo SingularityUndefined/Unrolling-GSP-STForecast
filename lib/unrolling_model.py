@@ -9,6 +9,7 @@ class UnrollingModel(nn.Module):
     def __init__(self, num_blocks, device, 
                  T, t_in,
                  n_heads,
+                 interval,
                  signal_channels,
                  feature_channels,
                  k_hop, 
@@ -119,6 +120,7 @@ class UnrollingModel(nn.Module):
                         n_nodes=graph_info['n_nodes'],
                         n_heads=n_heads,
                         n_channels=signal_rec_channels,
+                        interval=interval,
                         connect_list=self.connect_list,
                         nearest_nodes=self.nearsest_nodes,
                         device=device,
@@ -131,9 +133,10 @@ class UnrollingModel(nn.Module):
                         connect_list=self.connect_list,
                         nearest_nodes=self.nearsest_nodes,
                         n_heads=n_heads,
+                        interval=interval,
                         device=device,
                         n_channels=feature_channels,
-                        shared_params=shared_params
+                        shared_params=shared_params,
                     )
                 }
             ))

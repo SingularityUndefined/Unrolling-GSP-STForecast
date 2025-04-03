@@ -138,7 +138,7 @@ stride = 3
 return_time = True
 
 # load data
-train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=args.use_one_channel)
+train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=args.use_one_channel) # use one channel
 signal_channels = train_set.signal_channel
 
 # if args.use_one_channel:
@@ -159,6 +159,7 @@ else:
 
 num_admm_blocks = args.numblock
 num_heads = 4
+interval = 4
 feature_channels = 6
 ADMM_info = {
                  'ADMM_iters':args.numlayer,
@@ -174,7 +175,7 @@ model_pretrained_path = None
 
 
 print('args.ablation', args.ablation)
-model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, use_extrapolation=args.extrapolation, use_one_channel=args.use_one_channel, shared_params=args.shared_params).to(device)
+model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, interval, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, use_extrapolation=args.extrapolation, use_one_channel=args.use_one_channel, shared_params=args.shared_params).to(device)
 # 'UnrollingForecasting/MainExperiments/models/v2/PEMS04/direct_4b_4h_6f/val_15.pth'
 
 if model_pretrained_path is not None:
@@ -197,25 +198,25 @@ if args.use_stepLR:
     scheduler = lr_scheduler.StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
 
 # tensorboard logger
-tensorboard_logdir = f'./logs/TB_log/{experiment_name}'
+tensorboard_logdir = f'./dense_logs/TB_log/{experiment_name}'
 os.makedirs(tensorboard_logdir, exist_ok=True)
 writer = SummaryWriter(tensorboard_logdir)
 
 # create loggers
-log_dir = f'./logs/train_Logs/{experiment_name}'
+log_dir = f'./dense_logs/train_Logs/{experiment_name}'
 os.makedirs(log_dir, exist_ok=True)
 log_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.log'
 
 logger = setup_logger('logger1', os.path.join(log_dir, log_filename), logging.DEBUG, to_console=True)
 
 if args.loggrad != -1:
-    grad_logger_dir = f'./logs/grad_logs/{experiment_name}'
+    grad_logger_dir = f'./dense_logs/grad_logs/{experiment_name}'
     os.makedirs(grad_logger_dir, exist_ok=True)
     grad_logger = setup_logger('logger2', os.path.join(grad_logger_dir, log_filename), logging.INFO, to_console=False)
 
 # model save dir
-debug_model_path = os.path.join(f'./logs/debug_models/{experiment_name}', f'{dataset_name}/{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
-model_dir = os.path.join(f'./logs/models/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
+debug_model_path = os.path.join(f'./dense_logs/debug_models/{experiment_name}', f'{dataset_name}/{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
+model_dir = os.path.join(f'./dense_logs/models/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
 os.makedirs(model_dir, exist_ok=True)
 
 # print('log dir', log_dir)
@@ -240,7 +241,7 @@ print('log dir', log_dir)
 masked_flag = False
 # train models
 # test = True
-plot_list = f'./logs/loss_curves/{experiment_name}'
+plot_list = f'./dense_logs/loss_curves/{experiment_name}'
 os.makedirs(plot_list, exist_ok=True)
 plot_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.png'
 plot_path = os.path.join(plot_list, plot_filename)
@@ -263,9 +264,10 @@ for epoch in range(num_epochs):
     # iteration_count = 0
 
     for iter_idx, (y, x, t_list) in enumerate(tqdm(train_loader)):
+        # print(y.size(), x.size(), t_list.size())
         iteration_count = iter_idx + 1
         optimizer.zero_grad()
-        y, x, t_list = y.to(device), x.to(device), t_list.to(device)  # y in (B, t, nodes, 1)
+        y, x, t_list = y.to(device), x.to(device), t_list.to(device)  # y in (B, t, nodes, full_signal_channels), x in (B, T, N, pred_signal_channels), T in (B, T)
         # normalization
 
         normed_y = data_normalization.normalize_data(y)
@@ -320,6 +322,10 @@ for epoch in range(num_epochs):
             loss.backward()
             optimizer.step()
         
+        # Print gradients for all parameters
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                logger.info(f'Parameter {name}: grad_min={param.grad.min().item():.4f}, grad_max={param.grad.max().item():.4f}, grad_mean={param.grad.mean().item():.4f}')
         # metrics
         rec_mse += ((x[:, :t_in] - output[:, :t_in]) ** 2).mean().item()
         # only unknowns
@@ -343,12 +349,12 @@ for epoch in range(num_epochs):
             torch.save(model.state_dict(), debug_model_path)
 
         # log RMSE on each step during training, 40 times per epoch
-        rmse_per_time += ((x - output) ** 2).mean((0,2,3))
+        rmse_per_time += ((x - output) ** 2).mean((0,2,3)) # in (T,)
         rmse_sep += loss.item()
         check_per_batch = 10
         if iteration_count % (len(train_loader) // check_per_batch) == 0:
             rmse_checkpoint = torch.sqrt(rmse_per_time / (len(train_loader) // 40)).cpu().detach()
-            print(rmse_checkpoint.min().item(), rmse_checkpoint.max().item())
+            # print(rmse_checkpoint.min().item(), rmse_checkpoint.max().item())
             rec_rmse_dict = {f'time_{i:02d}': rmse_checkpoint[i] for i in range(t_in)}
             writer.add_scalars('rec_RMSE_per_step', rec_rmse_dict, epoch + iteration_count / len(train_loader))
             pred_rmse_dict = {f'time_{i:02d}': rmse_checkpoint[i] for i in range(t_in, T)}

@@ -5,7 +5,7 @@ from torch.nn.parameter import Parameter
 
 
 class CustomActivationFunction(nn.Module): 
-    def __init__(self, beta=0.8, mode='selu'):
+    def __init__(self, beta=0.8, mode='swish'):
         super().__init__()
         self.beta = beta
         self.mode = mode
@@ -459,7 +459,7 @@ class GraphLearningModule(nn.Module):
     '''
     learning the directed and undirected weights from features
     '''
-    def __init__(self, T, n_nodes, connect_list, nearest_nodes, n_heads, device, n_channels=None, sigma=6, Q1_init=1.2, Q2_init=0.8, M_init=1.5, shared_params=True) -> None:
+    def __init__(self, T, n_nodes, connect_list, nearest_nodes, n_heads, interval, device, n_channels=None, sigma=6, Q1_init=1.2, Q2_init=0.8, M_init=1.5, shared_params=True) -> None:
         '''
         Args:
             u_edges (torch.Tensor) in (n_edges, 2) # nodes regularized
@@ -475,25 +475,32 @@ class GraphLearningModule(nn.Module):
         self.nearest_nodes = nearest_nodes
         # multi_heads
         self.n_heads = n_heads
+        self.interval = interval
+        self.temp_indice = torch.arange(0, T).reshape(-1, 1) - torch.arange(1, interval + 1) # in (T, interval)
 
         # self.n_features = n_features # feature channels
         self.n_channels = n_channels
-        self.n_out = self.n_out = (self.n_channels + 1) // 2
+        self.n_out = n_channels# (self.n_channels + 1) // 2
         # define multiM, multiQs
         self.shared_params = shared_params
         self.Q1_init = Q1_init
         self.Q2_init = Q2_init
         self.M_init = M_init
         q_form = torch.zeros((self.n_heads, self.n_out, self.n_channels), device=self.device)
-        q_form[:,:, :self.n_out] = torch.diag_embed(torch.ones((self.n_heads, self.n_out), device=self.device))
+        q_form[:,:, :self.n_out] = torch.diag_embed(torch.ones((self.n_heads, self.n_out), device=self.device)) # tall matrix, self.n_out > self.n_channels
+        # Question: low-rank assumption, makes sense?
+        # add random noise, small value
+        # q_form = q_form + torch.randn((self.n_heads, self.n_out, self.n_channels), device=self.device) * 0.01
         # all variables shared across time
         multiQ1_init = q_form * self.Q1_init
         multiQ2_init = q_form * self.Q2_init
         multiM_init = torch.diag_embed(torch.ones((self.n_heads, self.n_channels), device=self.device)) * self.M_init
 
         if not self.shared_params:
-            multiQ1_init = multiQ1_init.unsqueeze(0).repeat(T-1, 1, 1, 1)
-            multiQ2_init = multiQ2_init.unsqueeze(0).repeat(T-1, 1, 1, 1)
+            # multiQ1_init = multiQ1_init.unsqueeze(0).repeat(T-1, 1, 1, 1)
+            # multiQ2_init = multiQ2_init.unsqueeze(0).repeat(T-1, 1, 1, 1)
+            multiQ1_init = multiQ1_init.unsqueeze(0).repeat(T, 1, 1, 1)
+            multiQ2_init = multiQ2_init.unsqueeze(0).repeat(T, 1, 1, 1)
             multiM_init = multiM_init.unsqueeze(0).repeat(T, 1, 1 , 1)
 
         self.multiQ1 = Parameter(multiQ1_init, requires_grad=True)
@@ -617,45 +624,94 @@ class GraphLearningModule(nn.Module):
     #     weights = weights * inv_in_degree.unsqueeze(3)
     #     # print(weights.max(), weights.min(), torch.isnan(weights).any())
     #     return weights
- ############################################ KNN Version ###############################################
+ ############################# Dense connection line graph version ##############################################
     def directed_graph_from_features(self, features):
         '''
         Args:
-            features (torch.Tensor) in (-1, T, n_nodes, n_features)
+            features (torch.Tensor) in (-1, T, n_nodes, n_heads, n_channels)
         Return:
-            u_edges in (-1, T-1, n_edges, n_heads)
+            u_edges in (-1, T, self.interval, n_nodes, n_heads, n_channels), with a lower triangular mask
         '''
-        B, T = features.size(0), features.size(1)
-        weights = {}
-        # pad features
-        pad_features = torch.zeros_like(features[:,:,0], device=self.device).unsqueeze(2)
-        pad_features = torch.cat((features, pad_features), dim=2)
+        # print('features', features.shape, features.max(), features.min(), torch.isnan(features).any())
+        B, T, C = features.size(0), features.size(1), features.size(-1)
+        # father features
+        # father_features = features# .unsqueeze(2) # in (B, T, 1, n_nodes, n_heads, n_channels)
+        # children features
+        features_i = features[:,self.temp_indice.view(-1)].view(B, T, self.interval, self.n_nodes, -1, self.n_channels) # in (B, T, interval, N, n_heads, n_channels)
 
-        feature_i = pad_features[:,:-1, self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels) # in (B, T-1, N, k, n_heads, n_channels)
-        feature_j = features[:,1:] # in (B, T-1, N, n_heads, n_channels)
+        # multiply with Qs
         if self.shared_params:
-            Q_i = torch.einsum('hij, btnehj -> btnehi', self.multiQ1, feature_i)
-            Q_j = torch.einsum('hij, btnhj -> btnhi', self.multiQ2, feature_j)
+            Q_i = torch.einsum('hij, btvnhj -> btvnhi', self.multiQ1, features_i)
+            Q_j = torch.einsum('hij, btnhj -> btnhi', self.multiQ2, features)
         else:
-            Q_i = torch.einsum('thij, btnehj -> btnehi', self.multiQ1, feature_i)
-            Q_j = torch.einsum('thij, btnhj -> btnhi', self.multiQ2, feature_j)
+            Q_i = torch.einsum('thij, btvnhj -> btvnhi', self.multiQ1, features_i)
+            Q_j = torch.einsum('thij, btnhj -> btnhi', self.multiQ2, features)
+        # assertation
+        assert not torch.isnan(Q_j).any(), f'Q_j has NaN value: Q2 in ({self.multiQ2.max().item():.4f}, {self.multiQ2.min().item():.4f}; features in ({features.max().item()}, {features.min().item()}))'
+        assert not torch.isnan(Q_i).any(), f'Q_i has NaN value: Q1 in ({self.multiQ1.max().item():.4f}, {self.multiQ1.min().item():.4f}, features in ({features.max()}, {features.min()})'
+        # multiply two qs
+        d = Q_i * Q_j.unsqueeze(2) # in (B, T, interval, N, n_heads, n_channels)
+        # print('deplacement', d.max(), d.min(), torch.isnan(d).any())
+        weights = torch.exp(- d).mean(-1) # in (B, T, interval, N, n_heads)
 
-        # print('Qi,Qj', Q_i.shape, Q_j.shape)
-        assert not torch.isnan(Q_j).any(), f'Q_j has NaN value: Q2 in ({self.multiQ2.max().item():.4f}, {self.multiQ2.min().item():.4f}; features in ({feature_j.max().item()}, {feature_j.min().item()}))'
-        assert not torch.isnan(Q_i).any(), f'Q_i has NaN value: Q1 in ({self.multiQ1.max().item():.4f}, {self.multiQ1.min().item():.4f}, features in ({feature_i.max()}, {feature_i.min()})'
-        weights = torch.exp(- (Q_i * Q_j.unsqueeze(3)).sum(-1)) # in (B, T-1, N, k, n_heads)
-        # mask unused weights
-        mask = (self.nearest_nodes == -1).unsqueeze(0).unsqueeze(1).unsqueeze(4).repeat(B, T-1, 1, 1, self.n_heads)
-        weights = weights * (~mask)
-        in_degree = weights.sum(3)
-        # print('in_degree', in_degree.max(), in_degree.min(), torch.isnan(in_degree).any())
+        # mask
+        mask = torch.ones(T, self.interval).tril_(diagonal=-1).unsqueeze(0).unsqueeze(3).unsqueeze(4).repeat(B, 1, 1, self.n_nodes, self.n_heads).to(self.device) # in (B, T, interval, N, n_heads)
+        weights = weights * mask
+        mask_bool = mask.to(torch.bool)
+        # print('weights before normalization', weights.shape, weights[mask_bool].max(), weights[mask_bool].min(), torch.isnan(weights).any())
+
+        # normalization
+        in_degree = weights.sum(2) # in (B, T, N, n_heads)
         inv_in_degree = torch.where(in_degree > 0, torch.ones((1,), device=self.device) / in_degree, torch.zeros((1,), device=self.device))
         inv_in_degree = torch.where(inv_in_degree == torch.inf, torch.zeros((1), device=self.device), inv_in_degree)
-        # print('inv_in_degree', inv_in_degree.max(), inv_in_degree.min(), torch.isnan(inv_in_degree).any())
-        weights = weights * inv_in_degree.unsqueeze(3)
-        # print(weights.max(), weights.min(), torch.isnan(weights).any())
+        inv_in_degree = torch.where(inv_in_degree == torch.nan, torch.zeros((1), device=self.device), inv_in_degree)
+        weights = weights * inv_in_degree.unsqueeze(2) # in (B, T, interval, N, n_heads)
+        # print('weights', weights.max(), weights.min(), torch.isnan(weights).any())
+        # print('weights', weights.shape, weights.max(), weights.min(), torch.isnan(weights).any())
+        print('weights', weights[mask_bool].max(), weights[mask_bool].min(), torch.isnan(weights).any())
         return weights
-    ############################### MODIFIED HERE #####################################
+
+######################### kNN version #################################
+    # def directed_graph_from_features(self, features):
+    #     '''
+    #     Args:
+    #         features (torch.Tensor) in (-1, T, n_nodes, n_features)
+    #     Return:
+    #         u_edges in (-1, T-1, n_edges, n_heads)
+    #     '''
+    #     B, T = features.size(0), features.size(1)
+    #     weights = {}
+    #     # pad features
+    #     pad_features = torch.zeros_like(features[:,:,0], device=self.device).unsqueeze(2)
+    #     pad_features = torch.cat((features, pad_features), dim=2)
+
+    #     feature_i = pad_features[:,:-1, self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels) # in (B, T-1, N, k, n_heads, n_channels)
+    #     feature_j = features[:,1:] # in (B, T-1, N, n_heads, n_channels)
+    #     if self.shared_params:
+    #         Q_i = torch.einsum('hij, btnehj -> btnehi', self.multiQ1, feature_i)
+    #         Q_j = torch.einsum('hij, btnhj -> btnhi', self.multiQ2, feature_j)
+    #     else:
+    #         Q_i = torch.einsum('thij, btnehj -> btnehi', self.multiQ1, feature_i)
+    #         Q_j = torch.einsum('thij, btnhj -> btnhi', self.multiQ2, feature_j)
+
+    #     # print('Qi,Qj', Q_i.shape, Q_j.shape)
+    #     assert not torch.isnan(Q_j).any(), f'Q_j has NaN value: Q2 in ({self.multiQ2.max().item():.4f}, {self.multiQ2.min().item():.4f}; features in ({feature_j.max().item()}, {feature_j.min().item()}))'
+    #     assert not torch.isnan(Q_i).any(), f'Q_i has NaN value: Q1 in ({self.multiQ1.max().item():.4f}, {self.multiQ1.min().item():.4f}, features in ({feature_i.max()}, {feature_i.min()})'
+    #     weights = torch.exp(- (Q_i * Q_j.unsqueeze(3)).sum(-1)) # in (B, T-1, N, k, n_heads)
+    #     # mask unused weights
+    #     mask = (self.nearest_nodes == -1).unsqueeze(0).unsqueeze(1).unsqueeze(4).repeat(B, T-1, 1, 1, self.n_heads)
+    #     weights = weights * (~mask)
+    #     in_degree = weights.sum(3)
+    #     # print('in_degree', in_degree.max(), in_degree.min(), torch.isnan(in_degree).any())
+    #     inv_in_degree = torch.where(in_degree > 0, torch.ones((1,), device=self.device) / in_degree, torch.zeros((1,), device=self.device))
+    #     inv_in_degree = torch.where(inv_in_degree == torch.inf, torch.zeros((1), device=self.device), inv_in_degree)
+    #     # print('inv_in_degree', inv_in_degree.max(), inv_in_degree.min(), torch.isnan(inv_in_degree).any())
+    #     weights = weights * inv_in_degree.unsqueeze(3)
+    #     # print(weights.max(), weights.min(), torch.isnan(weights).any())
+    #     return weights
+    
+
+    ############################### TODO MODIFIED HERE #####################################
     def undirected_temporal_graph_from_features(self, features):
         # we need to construct symmetric weights from the cross-frame features
         B, T = features.size(0), features.size(1)

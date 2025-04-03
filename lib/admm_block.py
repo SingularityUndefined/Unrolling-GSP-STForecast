@@ -6,7 +6,7 @@ from lib.backup_modules import LR_guess, k_hop_neighbors
 
 class ADMMBlock(nn.Module):
 
-    def __init__(self, T, n_nodes, n_heads, n_channels, connect_list, nearest_nodes, device,
+    def __init__(self, T, n_nodes, n_heads, n_channels, interval, connect_list, nearest_nodes, device,
                  ADMM_info = {
                  'ADMM_iters':50,
                  'CG_iters': 3,
@@ -23,6 +23,8 @@ class ADMMBlock(nn.Module):
         self.n_nodes = n_nodes
         self.n_heads = n_heads
         self.n_channels = n_channels
+        self.interval = interval
+        self.temp_indice = torch.arange(0, T).reshape(-1, 1) - torch.arange(1, interval + 1) # in (T, interval)
         # graphs (edges, edge weights)
         self.connect_list = connect_list
         self.nearest_nodes = nearest_nodes.to(torch.int64)
@@ -95,47 +97,77 @@ class ADMMBlock(nn.Module):
         return x - (self.u_ew.unsqueeze(-1) * pad_x[:,:,self.nearest_nodes[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
         # return x - (self.u_ew.unsqueeze(-1) * pad_x[:,:,self.connect_list[:, 1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
 
+########################### Dense line graph version ##########################
     def apply_op_Ldr(self, x):
         '''
-        self.d_ew in (B, T-1, k, n_heads)
+        Args:
+            x in (B, T, n_nodes, n_head, n_channel) # B: batchsize
+            edges in (B, T, interval, N, n_heads)
         '''
         B, T = x.size(0), x.size(1)
-        pad_x = torch.zeros_like(x[:,:,0], device=self.device).unsqueeze(2)
-        pad_x = torch.cat((x, pad_x), dim=2)
-        y = torch.zeros_like(x, device=self.device)
-        # y[:,1:] = x[:,1:] - (self.d_ew.unsqueeze(-1) * pad_x[:,:-1,self.connect_list.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
-        y[:,1:] = x[:,1:] - (self.d_ew.unsqueeze(-1) * pad_x[:,:-1,self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
+        # print(self.d_ew.shape, self.temp_indice.shape, x.shape)
+        features = self.d_ew.unsqueeze(-1) * x[:,self.temp_indice.view(-1)].reshape(B, T, self.interval, self.n_nodes, -1, self.n_channels) # in (B, T, interval, N, n_heads, n_channels)
+        y = x - features.sum(2) # in (B, T, N, n_heads, n_channels)
+        y[:,0] = x[:,0] * 0
         return y
 
     def apply_op_Ldr_T(self, x):
         '''
-        x in (B, T, N, n_head, n_channels)
+        Args:
+            x in (B, T, n_nodes, n_head, n_channel) # B: batchsize
+            edges in (B, T, interval, N, n_heads)
         '''
-        # print('x', x.size())
-        assert not torch.isnan(x).any(), 'Ldr T x input x has NaN value'
         B, T = x.size(0), x.size(1)
-        # print('apply Ldr T: x, nn', x.size(), self.nearest_nodes.size())
-
-        ##### KNN Version ##############################################
-        holder = self.d_ew.unsqueeze(-1) * x[:,1:].unsqueeze(3) # in (B, T-1, N, k, n_heads, n_channels)
-        in_features = torch.zeros((B, T-1, self.n_nodes + 1, self.n_heads, self.n_channels), device=self.device)
-        index = self.nearest_nodes.reshape(-1).unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).repeat(B, T-1, 1, self.n_heads, self.n_channels)
-        # index = self.nearest_nodes.reshape(-1).unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).repeat(B, T-1, 1, self.n_heads, self.n_channels)
-        index[index == -1] = self.n_nodes
-
-        if torch.any(index < 0) or torch.any(index >= in_features.size(2)):
-            raise ValueError("Index out of bounds")
-        in_features = in_features.scatter_add(2, index, holder.view(B, T-1, -1, self.n_heads, self.n_channels))
-        in_features = in_features[:,:,:-1]
-        ############### SYMMETRIC Version ###############
-        # pad_x = torch.zeros_like(x[:,:,0], device=self.device).unsqueeze(2)
-        # pad_x = torch.cat((x, pad_x), dim=2)
-        # in_features = (self.d_ew.unsqueeze(-1) * pad_x[:, 1:, self.connect_list.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3) # in (B, T-1, N, n_heads, n_channels)
- ####################################
+        features = self.d_ew.unsqueeze(-1) * x.unsqueeze(2) # in (B, T, interval, N, n_heads, n_channels)
+        features = torch.stack([features.diagonal(offset=-offset, dim1=1, dim2=2).sum(-1) for offset in range(1, T)], dim=1) # in (B, T-1, N, n_heads, n_channels)
         y = x.clone()
-        y[:,0] = torch.zeros_like(x[:,0])
-        y[:,:-1] = y[:,:-1] - in_features
+        y[:,0] = x[:,0] * 0
+        y[:,:-1] = y[:,:-1] - features # in (B, T-1, N, n_heads, n_channels)
         return y
+
+
+    ###################### KNN Version ########################
+#     def apply_op_Ldr(self, x):
+#         '''
+#         self.d_ew in (B, T-1, k, n_heads)
+#         '''
+#         B, T = x.size(0), x.size(1)
+#         pad_x = torch.zeros_like(x[:,:,0], device=self.device).unsqueeze(2)
+#         pad_x = torch.cat((x, pad_x), dim=2)
+#         y = torch.zeros_like(x, device=self.device)
+#         # y[:,1:] = x[:,1:] - (self.d_ew.unsqueeze(-1) * pad_x[:,:-1,self.connect_list.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
+#         y[:,1:] = x[:,1:] - (self.d_ew.unsqueeze(-1) * pad_x[:,:-1,self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3)
+#         return y
+
+#     def apply_op_Ldr_T(self, x):
+#         '''
+#         x in (B, T, N, n_head, n_channels)
+#         '''
+#         # print('x', x.size())
+#         assert not torch.isnan(x).any(), 'Ldr T x input x has NaN value'
+#         B, T = x.size(0), x.size(1)
+#         # print('apply Ldr T: x, nn', x.size(), self.nearest_nodes.size())
+
+#         ##### KNN Version ##############################################
+#         holder = self.d_ew.unsqueeze(-1) * x[:,1:].unsqueeze(3) # in (B, T-1, N, k, n_heads, n_channels)
+#         in_features = torch.zeros((B, T-1, self.n_nodes + 1, self.n_heads, self.n_channels), device=self.device)
+#         index = self.nearest_nodes.reshape(-1).unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).repeat(B, T-1, 1, self.n_heads, self.n_channels)
+#         # index = self.nearest_nodes.reshape(-1).unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).repeat(B, T-1, 1, self.n_heads, self.n_channels)
+#         index[index == -1] = self.n_nodes
+
+#         if torch.any(index < 0) or torch.any(index >= in_features.size(2)):
+#             raise ValueError("Index out of bounds")
+#         in_features = in_features.scatter_add(2, index, holder.view(B, T-1, -1, self.n_heads, self.n_channels))
+#         in_features = in_features[:,:,:-1]
+#         ############### SYMMETRIC Version ###############
+#         # pad_x = torch.zeros_like(x[:,:,0], device=self.device).unsqueeze(2)
+#         # pad_x = torch.cat((x, pad_x), dim=2)
+#         # in_features = (self.d_ew.unsqueeze(-1) * pad_x[:, 1:, self.connect_list.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels)).sum(3) # in (B, T-1, N, n_heads, n_channels)
+#  ####################################
+#         y = x.clone()
+#         y[:,0] = torch.zeros_like(x[:,0])
+#         y[:,:-1] = y[:,:-1] - in_features
+#         return y
     
     def apply_op_cLdr(self, x):
         y = self.apply_op_Ldr(x)

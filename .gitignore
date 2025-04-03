@@ -5,3 +5,5 @@ command_log/
 *.log
 lib_old/
 logs/
+Discussion_Notes/
+dense_logs/
