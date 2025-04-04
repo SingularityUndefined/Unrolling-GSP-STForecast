@@ -24,7 +24,8 @@ class ADMMBlock(nn.Module):
         self.n_heads = n_heads
         self.n_channels = n_channels
         self.interval = interval
-        self.temp_indice = torch.arange(0, T).reshape(-1, 1) - torch.arange(1, interval + 1) # in (T, interval)
+        # self.temp_indice = torch.arange(0, T).reshape(-1, 1) - torch.arange(1, interval + 1) # in (T, interval)
+        self.temp_indice = torch.arange(1, T).reshape(-1, 1) - torch.arange(1, interval + 1) # in (T- 1, interval)
         # graphs (edges, edge weights)
         self.connect_list = connect_list
         self.nearest_nodes = nearest_nodes.to(torch.int64)
@@ -106,8 +107,9 @@ class ADMMBlock(nn.Module):
         '''
         B, T = x.size(0), x.size(1)
         # print(self.d_ew.shape, self.temp_indice.shape, x.shape)
-        features = self.d_ew.unsqueeze(-1) * x[:,self.temp_indice.view(-1)].reshape(B, T, self.interval, self.n_nodes, -1, self.n_channels) # in (B, T, interval, N, n_heads, n_channels)
-        y = x - features.sum(2) # in (B, T, N, n_heads, n_channels)
+        features = self.d_ew.unsqueeze(-1) * x[:,self.temp_indice.view(-1)].reshape(B, T-1, self.interval, self.n_nodes, -1, self.n_channels) # in (B, T-1, interval, N, n_heads, n_channels)
+        y = x.clone()
+        y[:,1:] = x[:,1:] - features.sum(2) # in (B, T, N, n_heads, n_channels)
         y[:,0] = x[:,0] * 0
         return y
 
@@ -118,12 +120,39 @@ class ADMMBlock(nn.Module):
             edges in (B, T, interval, N, n_heads)
         '''
         B, T = x.size(0), x.size(1)
-        features = self.d_ew.unsqueeze(-1) * x.unsqueeze(2) # in (B, T, interval, N, n_heads, n_channels)
-        features = torch.stack([features.diagonal(offset=-offset, dim1=1, dim2=2).sum(-1) for offset in range(1, T)], dim=1) # in (B, T-1, N, n_heads, n_channels)
+        features = self.d_ew.unsqueeze(-1) * x[:,1:].unsqueeze(2) # in (B, T-1, interval, N, n_heads, n_channels)
+        features = torch.stack([features.diagonal(offset=-offset, dim1=1, dim2=2).sum(-1) for offset in range(0, T-1)], dim=1) # in (B, T-1, N, n_heads, n_channels)
         y = x.clone()
         y[:,0] = x[:,0] * 0
         y[:,:-1] = y[:,:-1] - features # in (B, T-1, N, n_heads, n_channels)
         return y
+    
+    # def apply_op_Ldr(self, x):
+    #     '''
+    #     Args:
+    #         x in (B, T, n_nodes, n_head, n_channel) # B: batchsize
+    #         edges in (B, T, interval, N, n_heads)
+    #     '''
+    #     B, T = x.size(0), x.size(1)
+    #     # print(self.d_ew.shape, self.temp_indice.shape, x.shape)
+    #     features = self.d_ew.unsqueeze(-1) * x[:,self.temp_indice.view(-1)].reshape(B, T, self.interval, self.n_nodes, -1, self.n_channels) # in (B, T, interval, N, n_heads, n_channels)
+    #     y = x - features.sum(2) # in (B, T, N, n_heads, n_channels)
+    #     y[:,0] = x[:,0] * 0
+    #     return y
+
+    # def apply_op_Ldr_T(self, x):
+    #     '''
+    #     Args:
+    #         x in (B, T, n_nodes, n_head, n_channel) # B: batchsize
+    #         edges in (B, T, interval, N, n_heads)
+    #     '''
+    #     B, T = x.size(0), x.size(1)
+    #     features = self.d_ew.unsqueeze(-1) * x.unsqueeze(2) # in (B, T, interval, N, n_heads, n_channels)
+    #     features = torch.stack([features.diagonal(offset=-offset, dim1=1, dim2=2).sum(-1) for offset in range(1, T)], dim=1) # in (B, T-1, N, n_heads, n_channels)
+    #     y = x.clone()
+    #     y[:,0] = x[:,0] * 0
+    #     y[:,:-1] = y[:,:-1] - features # in (B, T-1, N, n_heads, n_channels)
+    #     return y
 
 
     ###################### KNN Version ########################

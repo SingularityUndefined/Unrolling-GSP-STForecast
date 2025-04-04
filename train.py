@@ -28,6 +28,7 @@ parser.add_argument('--ablation', help='operator to elimnate in ablation study',
 parser.add_argument('--tin', help='time input', default=12, type=int)
 parser.add_argument('--tout', help='time output', default=12, type=int)
 parser.add_argument('--hop', help='k for kNN', default=6, type=int)
+parser.add_argument('--interval', help='interval for directed graph learning', default=4, type=int)
 parser.add_argument('--numblock', help='number of admm blocks', default=5, type=int)
 parser.add_argument('--numlayer', help='number of admm layers', default=25, type=int)
 parser.add_argument('--cgiter', help='CGD iterations', default=3, type=int)
@@ -159,7 +160,7 @@ else:
 
 num_admm_blocks = args.numblock
 num_heads = 4
-interval = 4
+interval = args.interval
 feature_channels = 6
 ADMM_info = {
                  'ADMM_iters':args.numlayer,
@@ -307,6 +308,11 @@ for epoch in range(num_epochs):
             else:
                 loss = loss_fn(normed_output, normed_x)
             loss.backward()
+            nan_list = check_nan_gradients(model)
+            if len(nan_list) > 0:
+                logger.error(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] in parameters {nan_list}')
+                exit(1)
+            # assert len(nan_list) == 0, f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]'
             optimizer.step()
             # recover data
             output = data_normalization.recover_data(normed_output, args.use_one_channel)
@@ -320,12 +326,12 @@ for epoch in range(num_epochs):
             else:
                 loss = loss_fn(output, x)
             loss.backward()
+            nan_list = check_nan_gradients(model)
+            if len(nan_list) > 0:
+                logger.error(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] in parameters {nan_list}')
+                exit(1)
+            # assert len(nan_list) == 0, f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]'
             optimizer.step()
-        
-        # Print gradients for all parameters
-        for name, param in model.named_parameters():
-            if param.grad is not None:
-                logger.info(f'Parameter {name}: grad_min={param.grad.min().item():.4f}, grad_max={param.grad.max().item():.4f}, grad_mean={param.grad.mean().item():.4f}')
         # metrics
         rec_mse += ((x[:, :t_in] - output[:, :t_in]) ** 2).mean().item()
         # only unknowns

@@ -476,35 +476,37 @@ class GraphLearningModule(nn.Module):
         # multi_heads
         self.n_heads = n_heads
         self.interval = interval
-        self.temp_indice = torch.arange(0, T).reshape(-1, 1) - torch.arange(1, interval + 1) # in (T, interval)
+        # self.temp_indice = torch.arange(0, T).reshape(-1, 1) - torch.arange(1, interval + 1) # in (T, interval)
+        self.temp_indice = torch.arange(1, T).reshape(-1, 1) - torch.arange(1, interval + 1) # in (T - 1, interval)
 
         # self.n_features = n_features # feature channels
         self.n_channels = n_channels
-        self.n_out = n_channels# (self.n_channels + 1) // 2
+        self.n_out = (self.n_channels + 1) // 2
         # define multiM, multiQs
         self.shared_params = shared_params
         self.Q1_init = Q1_init
         self.Q2_init = Q2_init
         self.M_init = M_init
-        q_form = torch.zeros((self.n_heads, self.n_out, self.n_channels), device=self.device)
-        q_form[:,:, :self.n_out] = torch.diag_embed(torch.ones((self.n_heads, self.n_out), device=self.device)) # tall matrix, self.n_out > self.n_channels
+        q_form = torch.zeros((self.n_heads, self.n_channels, self.n_channels), device=self.device)
+        q_form[:,:self.n_out, :self.n_out] = torch.diag_embed(torch.ones((self.n_heads, self.n_out), device=self.device)) # tall matrix, self.n_out > self.n_channels
+
         # Question: low-rank assumption, makes sense?
         # add random noise, small value
-        # q_form = q_form + torch.randn((self.n_heads, self.n_out, self.n_channels), device=self.device) * 0.01
+        q_form = q_form + torch.randn((self.n_heads, self.n_channels, self.n_channels), device=self.device) * 0.01
         # all variables shared across time
-        multiQ1_init = q_form * self.Q1_init
-        multiQ2_init = q_form * self.Q2_init
+        multiQ_init = q_form * self.Q1_init
+        # multiQ2_init = q_form * self.Q2_init
         multiM_init = torch.diag_embed(torch.ones((self.n_heads, self.n_channels), device=self.device)) * self.M_init
 
         if not self.shared_params:
             # multiQ1_init = multiQ1_init.unsqueeze(0).repeat(T-1, 1, 1, 1)
             # multiQ2_init = multiQ2_init.unsqueeze(0).repeat(T-1, 1, 1, 1)
-            multiQ1_init = multiQ1_init.unsqueeze(0).repeat(T, 1, 1, 1)
-            multiQ2_init = multiQ2_init.unsqueeze(0).repeat(T, 1, 1, 1)
+            multiQ_init = multiQ_init.unsqueeze(0).repeat(T-1, 1, 1, 1)
+            # multiQ2_init = multiQ2_init.unsqueeze(0).repeat(T, 1, 1, 1)
             multiM_init = multiM_init.unsqueeze(0).repeat(T, 1, 1 , 1)
 
-        self.multiQ1 = Parameter(multiQ1_init, requires_grad=True)
-        self.multiQ2 = Parameter(multiQ2_init, requires_grad=True)
+        self.multiQ = Parameter(multiQ_init, requires_grad=True)
+        # self.multiQ2 = Parameter(multiQ2_init, requires_grad=True)
         self.multiM = Parameter(multiM_init, requires_grad=True) # in (n_heads, n_channels, n_channels)
 
 # ####################################### KNN VERSION #######################################
@@ -634,41 +636,50 @@ class GraphLearningModule(nn.Module):
         '''
         # print('features', features.shape, features.max(), features.min(), torch.isnan(features).any())
         B, T, C = features.size(0), features.size(1), features.size(-1)
+        features_j = features[:,1:] # in (B, T-1, N, n_heads, n_channels)
         # father features
         # father_features = features# .unsqueeze(2) # in (B, T, 1, n_nodes, n_heads, n_channels)
         # children features
-        features_i = features[:,self.temp_indice.view(-1)].view(B, T, self.interval, self.n_nodes, -1, self.n_channels) # in (B, T, interval, N, n_heads, n_channels)
+        features_i = features[:,self.temp_indice.view(-1)].view(B, T-1, self.interval, self.n_nodes, -1, self.n_channels) # in (B, T - 1, interval, N, n_heads, n_channels)
 
         # multiply with Qs
         if self.shared_params:
-            Q_i = torch.einsum('hij, btvnhj -> btvnhi', self.multiQ1, features_i)
-            Q_j = torch.einsum('hij, btnhj -> btnhi', self.multiQ2, features)
+            # Q_i = torch.einsum('hij, btvnhj -> btvnhi', self.multiQ1, features_i)
+            Q_j = torch.einsum('hij, btnhj -> btnhi', self.multiQ, features_j)
         else:
-            Q_i = torch.einsum('thij, btvnhj -> btvnhi', self.multiQ1, features_i)
-            Q_j = torch.einsum('thij, btnhj -> btnhi', self.multiQ2, features)
+            # Q_i = torch.einsum('thij, btvnhj -> btvnhi', self.multiQ1, features_i)
+            Q_j = torch.einsum('thij, btnhj -> btnhi', self.multiQ, features_j)
         # assertation
         assert not torch.isnan(Q_j).any(), f'Q_j has NaN value: Q2 in ({self.multiQ2.max().item():.4f}, {self.multiQ2.min().item():.4f}; features in ({features.max().item()}, {features.min().item()}))'
-        assert not torch.isnan(Q_i).any(), f'Q_i has NaN value: Q1 in ({self.multiQ1.max().item():.4f}, {self.multiQ1.min().item():.4f}, features in ({features.max()}, {features.min()})'
+        # assert not torch.isnan(Q_i).any(), f'Q_i has NaN value: Q1 in ({self.multiQ1.max().item():.4f}, {self.multiQ1.min().item():.4f}, features in ({features.max()}, {features.min()})'
         # multiply two qs
-        d = Q_i * Q_j.unsqueeze(2) # in (B, T, interval, N, n_heads, n_channels)
+        d = features_i * Q_j.unsqueeze(2) # in (B, T, interval, N, n_heads, n_channels)
         # print('deplacement', d.max(), d.min(), torch.isnan(d).any())
-        weights = torch.exp(- d).mean(-1) # in (B, T, interval, N, n_heads)
+        weights = torch.exp(-d).sum(-1) # in (B, T, interval, N, n_heads)
 
         # mask
-        mask = torch.ones(T, self.interval).tril_(diagonal=-1).unsqueeze(0).unsqueeze(3).unsqueeze(4).repeat(B, 1, 1, self.n_nodes, self.n_heads).to(self.device) # in (B, T, interval, N, n_heads)
+        mask = torch.ones(T-1, self.interval).tril_(diagonal=0).unsqueeze(0).unsqueeze(3).unsqueeze(4).repeat(B, 1, 1, self.n_nodes, self.n_heads).to(self.device)
+        # mask = torch.ones(T, self.interval).tril_(diagonal=-1).unsqueeze(0).unsqueeze(3).unsqueeze(4).repeat(B, 1, 1, self.n_nodes, self.n_heads).to(self.device) # in (B, T, interval, N, n_heads)
         weights = weights * mask
         mask_bool = mask.to(torch.bool)
         # print('weights before normalization', weights.shape, weights[mask_bool].max(), weights[mask_bool].min(), torch.isnan(weights).any())
 
-        # normalization
-        in_degree = weights.sum(2) # in (B, T, N, n_heads)
+        # # normalization
+        # in_degree = weights.sum(2, keepdim=True) # in (B, T, N, n_heads)
+        # inv_in_degree = torch.where(in_degree > 0, torch.ones((1,), device=self.device) / in_degree, torch.zeros((1,), device=self.device))
+        # # inv_in_degree = torch.where(inv_in_degree == torch.inf, torch.zeros((1), device=self.device), inv_in_degree)
+        # # inv_in_degree = torch.where(inv_in_degree == torch.nan, torch.zeros((1), device=self.device), inv_in_degree)
+        # weights = weights * inv_in_degree# .unsqueeze(2) # in (B, T, interval, N, n_heads)
+        in_degree = weights.sum(2, keepdim=True) # in (B, T, interval, N, n_heads)
         inv_in_degree = torch.where(in_degree > 0, torch.ones((1,), device=self.device) / in_degree, torch.zeros((1,), device=self.device))
-        inv_in_degree = torch.where(inv_in_degree == torch.inf, torch.zeros((1), device=self.device), inv_in_degree)
-        inv_in_degree = torch.where(inv_in_degree == torch.nan, torch.zeros((1), device=self.device), inv_in_degree)
-        weights = weights * inv_in_degree.unsqueeze(2) # in (B, T, interval, N, n_heads)
+        weights = weights * inv_in_degree # in (B, T, interval, N, n_hea
+        # weights[:,0] = weights[:,0] * 0 # in (B, T, interval, N, n_heads)
+        # weights = weights / (weights.sum(2, keepdim=True) + 1e-6) # in (B, T, interval, N, n_heads)
+        # print(weights[0,:,:,0,0])
+
         # print('weights', weights.max(), weights.min(), torch.isnan(weights).any())
         # print('weights', weights.shape, weights.max(), weights.min(), torch.isnan(weights).any())
-        print('weights', weights[mask_bool].max(), weights[mask_bool].min(), torch.isnan(weights).any())
+        # print('weights', weights[mask_bool].max(), weights[mask_bool].min(), torch.isnan(weights).any())
         return weights
 
 ######################### kNN version #################################

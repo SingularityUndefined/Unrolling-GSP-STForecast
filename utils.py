@@ -299,3 +299,19 @@ def test(model, val_loader, data_normalization, masked_flag, args, device, signa
         else:
             return metrics
     # return running_loss
+
+
+# check the gradients
+def check_nan_gradients(model:nn.Module):
+    # print all gradients
+    # flag = False
+    nan_list = [] # list of parameters with NaN gradients and inf gradients
+    for name, param in model.named_parameters():
+        if param.grad is not None:
+            if torch.isnan(param.grad).any():
+                # flag = True
+                nan_list.append(name)
+            elif torch.isinf(param.grad).any():
+                # flag = True
+                nan_list.append(name)
+    return nan_list
