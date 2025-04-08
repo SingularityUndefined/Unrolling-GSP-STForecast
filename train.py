@@ -12,6 +12,10 @@ import argparse
 from collections import Counter
 import sys
 from tensorboardX import SummaryWriter
+import yaml
+
+with open("config.yaml", 'r') as f: 
+    config = yaml.safe_load(f)
 
 parser = argparse.ArgumentParser()
 
@@ -25,20 +29,11 @@ parser.add_argument('--mode', help='normalization mode', default='normalize', ty
 parser.add_argument('--ablation', help='operator to elimnate in ablation study', default='None', type=str)#action='store_true', help='run ablation model')
 
 # model hyper-params
-parser.add_argument('--tin', help='time input', default=12, type=int)
-parser.add_argument('--tout', help='time output', default=12, type=int)
-parser.add_argument('--hop', help='k for kNN', default=6, type=int)
-parser.add_argument('--interval', help='interval for directed graph learning', default=4, type=int)
-parser.add_argument('--numblock', help='number of admm blocks', default=5, type=int)
-parser.add_argument('--numlayer', help='number of admm layers', default=25, type=int)
-parser.add_argument('--cgiter', help='CGD iterations', default=3, type=int)
 parser.add_argument('--seed', help='random seed', default=3407, type=int)
 parser.add_argument('--debug', dest='debug', help='if debug, save model every iteration', action='store_true')
 parser.set_defaults(debug=False)
 
 # optimizer and learning setting
-parser.add_argument('--optim', help='optimizer', default='adamw', type=str)
-parser.add_argument('--lr', help='learning rate', default=1e-4, type=float)
 parser.add_argument('--stepLR', dest='use_stepLR', action='store_true')
 parser.set_defaults(use_stepLR=False)
 parser.add_argument('--stepsize', help='stepLR stepsize', default=8, type=int)
@@ -46,27 +41,9 @@ parser.add_argument('--gamma', help='stepLR gamma', default=0.2, type=float)
 
 # training settings
 parser.add_argument('--epochs', help='running epochs', default=30, type=int)
-parser.add_argument('--clamp', help='clamp parameter', default=0.20, type=float) # clamp CG params
-parser.add_argument('--loss', help='loss function', default='MSE', type=str)
 
 # log settings
-parser.add_argument('--loggrad', help='log gradient norms', default=20, type=int) # -1 stands for no log
-
-# default settings, extrapolation model
-parser.add_argument('--extrapolation', help='use extrapolation GCN model', action='store_true')#, default=False)
-parser.set_defaults(extrapolation=False)
-
-# default settings, 1-channel prediction
-parser.add_argument('--flow', help='flow channel', dest='use_one_channel', action='store_true')
-parser.set_defaults(use_one_channel=False)
-
-# default settings, no shared parameters
-parser.add_argument('--diffM', dest='shared_params', action='store_false')
-parser.set_defaults(shared_params=True)
-
-# default settings, normalized loss
-parser.add_argument('--normloss', dest='normed_loss', action='store_true')
-parser.set_defaults(normed_loss=False)
+parser.add_argument('--loggrad', help='log gradient norms', default=20, type=int) # -1 stand for no log, 0 for log all, >0 for log every n iterations
 
 args = parser.parse_args()
 
@@ -75,12 +52,12 @@ seed_everything(args.seed)
 # Hyper-parameter[s
 device = torch.device('cuda:' + str(args.cuda) if torch.cuda.is_available() else 'cpu')
 batch_size = args.batchsize
-learning_rate = args.lr# 1e-3
+learning_rate = config['learning_rate']
 num_epochs = args.epochs
-num_workers = 4
+num_workers = config['num_workers']
 
 # loss
-loss_name = args.loss
+loss_name = config['loss_function']
 
 if loss_name == 'MSE':
     loss_fn = nn.MSELoss()
@@ -111,35 +88,36 @@ def get_degrees(n_nodes, u_edges:torch.Tensor):
     return counts
 
 # hops
-k_hop = args.hop
+k_hop = config['model']['kNN']
+interval = config['model']['interval']
 dataset_dir = '/home/disk/qij/TS_datasets/PEMS0X_data/'
-experiment_name = f'{k_hop}_hop_{args.interval}_int_lr_{args.lr:.0e}_seed{args.seed}'
+experiment_name = f'{k_hop}_hop_{interval}_int_lr_{learning_rate:.0e}_seed{args.seed}'
 
 if args.ablation != 'None':
     experiment_name = f'wo_{args.ablation}' + experiment_name
-if not args.extrapolation:
+if not config['model']['use_extrapolation']:
     experiment_name = 'LR_' + experiment_name
 
-if args.use_one_channel:
+if config['model']['use_one_channel']:
     experiment_name = '1channel_' + experiment_name
 
-if not args.shared_params:
+if not config['model']['shared_params']:
     experiment_name = 'diffM_' + experiment_name
 
-if args.normed_loss:
+if config['normed_loss']:
     experiment_name = experiment_name + '_normed_loss'
 else:
     experiment_name = experiment_name + '_true_loss'
 
 dataset_name = args.dataset
-T = args.tin + args.tout
-t_in = args.tin
-stride = 3
+T = config['model']['t_in'] + config['model']['t_out']
+t_in = config['model']['t_in']
+stride = config['data_stride']
 
 return_time = True
 
 # load data
-train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=args.use_one_channel) # use one channel
+train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=config['model']['use_one_channel']) # use one channel
 signal_channels = train_set.signal_channel
 
 # if args.use_one_channel:
@@ -158,17 +136,17 @@ else:
     print('min value of data', data_normalization.min[...,0].min(), data_normalization.min[...,0].max())
     print('max value of data', data_normalization.max[...,0].min(), data_normalization.max[...,0].max())
 
-num_admm_blocks = args.numblock
-num_heads = 4
-interval = args.interval
-feature_channels = 6
+num_admm_blocks = config['model']['num_blocks']
+num_heads = config['model']['num_heads']
+interval = config['model']['interval']
+feature_channels = config['model']['feature_channels']
 ADMM_info = {
-                 'ADMM_iters':args.numlayer,
-                 'CG_iters': args.cgiter,
-                 'PGD_iters': 3,
-                 'mu_u_init':3,
-                 'mu_d1_init':3,
-                 'mu_d2_init':3,
+                 'ADMM_iters':config['model']['num_layers'],
+                 'CG_iters': config['model']['CG_iters'],
+                 'PGD_iters': config['model']['PGD_iters'],
+                 'mu_u_init':config['ADMM_params']['mu_u'],
+                 'mu_d1_init':config['ADMM_params']['mu_d1'],
+                 'mu_d2_init':config['ADMM_params']['mu_d2'],
                  }
 # graph_sigma = 6
 
@@ -176,7 +154,7 @@ model_pretrained_path = None
 
 
 print('args.ablation', args.ablation)
-model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, interval, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, use_extrapolation=args.extrapolation, use_one_channel=args.use_one_channel, shared_params=args.shared_params).to(device)
+model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, interval, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, use_extrapolation=config['model']['use_extrapolation'], use_one_channel=config['model']['use_one_channel'], shared_params=config['model']['shared_params']).to(device)
 # 'UnrollingForecasting/MainExperiments/models/v2/PEMS04/direct_4b_4h_6f/val_15.pth'
 
 if model_pretrained_path is not None:
@@ -189,11 +167,11 @@ ADMM_iters = ADMM_info['ADMM_iters']
 import torch.optim as optim
 from torch.optim import lr_scheduler
 
-assert args.optim in ['adam', 'adamw'], 'args.optim should be adam or adamw'
-if args.optim == 'adam':
+assert config['optim'] in ['adam', 'adamw'], 'config[\'optim\'] should be adam or adamw'
+if config['optim'] == 'adam':
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-elif args.optim == 'adamw':
-    optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-2)
+elif config['optim'] == 'adamw':
+    optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=config['weight_decay'])
 
 if args.use_stepLR:
     scheduler = lr_scheduler.StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
@@ -226,6 +204,15 @@ logger.info("Training CMD:\t"+ " ".join(sys.argv))
 logger.info('PARAMETER SETTINGS:')
 for arg, value in vars(args).items():
     logger.info("\t %s: %s", arg, value)
+
+logger.info('CONFIG SETTINGS:')
+for key, value in config.items():
+    if isinstance(value, dict):
+        logger.info("\t%s:", key)
+        for k, v in value.items():
+            logger.info("\t\t%s: %s", k, v)
+    else:
+        logger.info("\t%s: %s", key, value)
 logger.info('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
 total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 logger.info('pretrained path: %s', model_pretrained_path)
@@ -238,7 +225,7 @@ logger.info('graph info: nodes %d, edges %d, signal channels %d', train_set.n_no
 logger.info('--------BEGIN TRAINING PROCESS------------')
 if args.loggrad != -1:
     grad_logger.info('------BEGIN TRAINING PROCESS-------')
-print('log dir', log_dir)
+print('log path', os.path.join(log_dir, log_filename))
 masked_flag = False
 # train models
 # test = True
@@ -272,7 +259,7 @@ for epoch in range(num_epochs):
         # normalization
 
         normed_y = data_normalization.normalize_data(y)
-        normed_x = data_normalization.normalize_data(x, args.use_one_channel)
+        normed_x = data_normalization.normalize_data(x, config['model']['use_one_channel'])
 
         try:
             normed_output = model(normed_y, t_list)  # in (B, T, nodes, 1)
@@ -288,21 +275,21 @@ for epoch in range(num_epochs):
 
             plot_loss_curve(train_loss_list, val_loss_list, plot_path)
 
-            if not args.use_one_channel:
+            if not config['model']['use_one_channel']:
                 metrics, metrics_d = test(model, test_loader, data_normalization, False, args, device, signal_channels, use_one_channel=False)
             else:
                 metrics = test(model, test_loader, data_normalization, False, args, device, signal_channels, use_one_channel=True)
 
             logger.info('Test (ALL): rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', metrics['rec_RMSE'], metrics['pred_RMSE'], metrics['pred_MAE'], metrics['pred_MAPE'])
 
-            if not args.use_one_channel:
+            if not config['model']['use_one_channel']:
                 for i in range(signal_channels):
                     logger.info('Test (%s): rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', signal_list[i], metrics_d['rec_RMSE'][i], metrics_d['pred_RMSE'][i], metrics_d['pred_MAE'][i], metrics_d['pred_MAPE'][i])
 
             raise ValueError(f'Error in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}') from ve
 
         # normalized loss
-        if args.normed_loss:
+        if config['normed_loss']:
             if masked_flag:
                 loss = loss_fn(normed_output[:, t_in:], normed_x[:, t_in:])
             else:
@@ -315,11 +302,11 @@ for epoch in range(num_epochs):
             # assert len(nan_list) == 0, f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]'
             optimizer.step()
             # recover data
-            output = data_normalization.recover_data(normed_output, args.use_one_channel)
+            output = data_normalization.recover_data(normed_output, config['model']['use_one_channel'])
 
         # recover data
         else:
-            output = data_normalization.recover_data(normed_output, args.use_one_channel)
+            output = data_normalization.recover_data(normed_output, config['model']['use_one_channel'])
             # print(output.size())
             if masked_flag:
                 loss = loss_fn(output[:, t_in:], x[:, t_in:])
@@ -347,9 +334,9 @@ for epoch in range(num_epochs):
             log_gradients(epoch, num_epochs, iteration_count, train_loader, model, grad_logger, args)
 
         # clamp data: >0 clamp to [0, args.clamp], =0 clamp to [0, inf), <0 no clamp
-        if args.clamp > 0:
-            model.clamp_param(args.clamp, args.clamp)
-        elif args.clamp == 0:
+        if config['clamp'] > 0:
+            model.clamp_param(config['clamp'], config['clamp'])
+        elif config['clamp'] == 0:
             model.clamp_param()
         if args.debug:
             torch.save(model.state_dict(), debug_model_path)
@@ -368,6 +355,12 @@ for epoch in range(num_epochs):
             rmse_dict = {f'time_{i:02d}': rmse_checkpoint[i] for i in range(T)}
             writer.add_scalars('RMSE_per_step', rmse_dict, epoch + iteration_count / len(train_loader))
             writer.add_scalar('Loss_batch', rmse_sep / (len(train_loader) // check_per_batch), epoch + iteration_count / len(train_loader))
+
+            # log parameter scalars
+            param_dicts, grad_dict = log_parameters_scalars(model, ['multiQ', 'alpha', 'beta'])
+            for check_name, value_dict in param_dicts.items():
+                writer.add_scalars(check_name, value_dict, epoch + iteration_count / len(train_loader))
+            writer.add_scalars('grad', grad_dict, epoch + iteration_count / len(train_loader))
             rmse_per_time = rmse_per_time * 0
             rmse_sep = 0
 
@@ -407,6 +400,7 @@ for epoch in range(num_epochs):
 
     logger.info('Training: Epoch [%d/%d], Loss:%.4f, rec_RMSE: %.4f, RMSE_next:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', epoch + 1, num_epochs, total_loss, rec_rmse, nearest_rmse, pred_rmse, pred_mae, pred_mape)
     # print other parameters
+    # print_parameters(model, ['multiQ', 'alpha', 'beta'], logger)
 
     # logger.info('multiQ1, multiQ2, multiM: %f, %f, %f', glm.multiQ1.max().item(), glm.multiQ2.max().item(), glm.multiM.max().item())
     # if args.ablation in ['None', 'DGLR']:
@@ -422,7 +416,7 @@ for epoch in range(num_epochs):
 
     # validation
     if (epoch + 1) % 5 == 0:
-        if not args.use_one_channel:
+        if not config['model']['use_one_channel']:
             running_loss, metrics, metric_d = test(model, val_loader, data_normalization, masked_flag, args, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=False)
         else:
             running_loss, metrics = test(model, val_loader, data_normalization, masked_flag, args, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=True)
@@ -431,7 +425,7 @@ for epoch in range(num_epochs):
 
         logger.info('Validation: Epoch [%d/%d], Loss:%.4f, rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', epoch + 1, num_epochs, running_loss, metrics['rec_RMSE'], metrics['pred_RMSE'], metrics['pred_MAE'], metrics['pred_MAPE'])
 
-        if not args.use_one_channel:
+        if not config['model']['use_one_channel']:
             for i in range(signal_channels):
                 logger.info('Channel %s:\t rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', signal_list[i], metric_d['rec_RMSE'][i], metric_d['pred_RMSE'][i], metric_d['pred_MAE'][i], metric_d['pred_MAPE'][i])
         # save model dicts
