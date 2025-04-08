@@ -661,24 +661,20 @@ class GraphLearningModule(nn.Module):
         mask = torch.ones(T-1, self.interval).tril_(diagonal=0).unsqueeze(0).unsqueeze(3).unsqueeze(4).repeat(B, 1, 1, self.n_nodes, self.n_heads).to(self.device)
         # mask = torch.ones(T, self.interval).tril_(diagonal=-1).unsqueeze(0).unsqueeze(3).unsqueeze(4).repeat(B, 1, 1, self.n_nodes, self.n_heads).to(self.device) # in (B, T, interval, N, n_heads)
         weights = weights * mask
-        mask_bool = mask.to(torch.bool)
         # print('weights before normalization', weights.shape, weights[mask_bool].max(), weights[mask_bool].min(), torch.isnan(weights).any())
 
         # # normalization
-        # in_degree = weights.sum(2, keepdim=True) # in (B, T, N, n_heads)
-        # inv_in_degree = torch.where(in_degree > 0, torch.ones((1,), device=self.device) / in_degree, torch.zeros((1,), device=self.device))
-        # # inv_in_degree = torch.where(inv_in_degree == torch.inf, torch.zeros((1), device=self.device), inv_in_degree)
-        # # inv_in_degree = torch.where(inv_in_degree == torch.nan, torch.zeros((1), device=self.device), inv_in_degree)
-        # weights = weights * inv_in_degree# .unsqueeze(2) # in (B, T, interval, N, n_heads)
+
         in_degree = weights.sum(2, keepdim=True) # in (B, T, interval, N, n_heads)
         inv_in_degree = torch.where(in_degree > 0, torch.ones((1,), device=self.device) / in_degree, torch.zeros((1,), device=self.device))
-        weights = weights * inv_in_degree # in (B, T, interval, N, n_hea
-        # weights[:,0] = weights[:,0] * 0 # in (B, T, interval, N, n_heads)
-        # weights = weights / (weights.sum(2, keepdim=True) + 1e-6) # in (B, T, interval, N, n_heads)
-        # print(weights[0,:,:,0,0])
+        weights = weights * inv_in_degree # in (B, T, interval, N, n_head)
+        # or
+       #  weights = weights / (weights.sum(2, keepdim=True) + 1e-8) # in (B, T, interval, N, n_heads)
 
+        # print weights
         # print('weights', weights.max(), weights.min(), torch.isnan(weights).any())
         # print('weights', weights.shape, weights.max(), weights.min(), torch.isnan(weights).any())
+        # mask_bool = mask.to(torch.bool)
         # print('weights', weights[mask_bool].max(), weights[mask_bool].min(), torch.isnan(weights).any())
         return weights
 
