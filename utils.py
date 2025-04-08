@@ -161,7 +161,7 @@ def print_gradients(model):
         if model.use_extrapolation and model.use_old_extrapolation and 'linear_extrapolation' in name:
             print(f'{name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
 
-def change_model_location(model_path, device):
+def change_model_location(model, model_path, device):
     model_params = torch.load(model_path, map_location=device)
     model.load_state_dict(model_params)
     # model = torch.load(model_path, map_location=device).to(device)
@@ -308,10 +308,12 @@ def check_nan_gradients(model:nn.Module):
     nan_list = [] # list of parameters with NaN gradients and inf gradients
     for name, param in model.named_parameters():
         if param.grad is not None:
-            if torch.isnan(param.grad).any():
-                # flag = True
-                nan_list.append(name)
-            elif torch.isinf(param.grad).any():
-                # flag = True
+            if torch.isnan(param.grad).any() or torch.isnan(param).any() or torch.isinf(param.grad).any() or torch.isinf(param).any():
                 nan_list.append(name)
     return nan_list
+
+def print_parameters(model:nn.Module, name_list:list, logger):
+    for check_name in name_list:
+        for name, param in model.named_parameters():
+            if check_name in name:
+                logger.info(f'\t {name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
