@@ -113,7 +113,7 @@ def get_degrees(n_nodes, u_edges:torch.Tensor):
 # hops
 k_hop = args.hop
 dataset_dir = '/home/disk/qij/TS_datasets/PEMS0X_data/'
-experiment_name = f'{k_hop}_hop_lr_{args.lr:.0e}_seed{args.seed}'
+experiment_name = f'{k_hop}_hop_{args.interval}_int_lr_{args.lr:.0e}_seed{args.seed}'
 
 if args.ablation != 'None':
     experiment_name = f'wo_{args.ablation}' + experiment_name
@@ -199,7 +199,7 @@ if args.use_stepLR:
     scheduler = lr_scheduler.StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
 
 # tensorboard logger
-tensorboard_logdir = f'./dense_logs/TB_log/{experiment_name}'
+tensorboard_logdir = f'./dense_logs/TB_log/{experiment_name}/{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f'
 os.makedirs(tensorboard_logdir, exist_ok=True)
 writer = SummaryWriter(tensorboard_logdir)
 
