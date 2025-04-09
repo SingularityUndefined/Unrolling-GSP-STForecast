@@ -307,14 +307,15 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
 def check_nan_gradients(model:nn.Module):
     # print all gradients
     # flag = False
-    nan_list = [] # list of parameters with NaN gradients and inf gradients
-    for name, param in model.named_parameters():
+    # nan_module = None # list of parameters with NaN gradients and inf gradients
+    for name, param in reversed(list(model.named_parameters())):
         if param.grad is not None:
             param_detached = param.detach().cpu()
             grad_detached = param.grad.detach().cpu()
             if torch.isnan(grad_detached).any() or torch.isnan(param_detached).any() or torch.isinf(grad_detached).any() or torch.isinf(param_detached).any():
-                nan_list.append(name)
-    return nan_list
+                return name
+                # break
+    return
 
 def log_parameters_scalars(model:nn.Module, name_list:list):
     # num_blocks = model.num_blocks

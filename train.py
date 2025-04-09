@@ -296,10 +296,10 @@ for epoch in range(num_epochs):
             else:
                 loss = loss_fn(normed_output, normed_x)
             loss.backward()
-            nan_list = check_nan_gradients(model)
-            if len(nan_list) > 0:
-                logger.error(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] in parameters {nan_list}')
-                exit(1)
+            nan_name = check_nan_gradients(model)
+            if nan_name is not None:
+                logger.error(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] in parameters {nan_name}')
+                raise ValueError(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] first in {nan_name} in backward propagation')
             # assert len(nan_list) == 0, f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]'
             optimizer.step()
             # recover data
@@ -314,10 +314,10 @@ for epoch in range(num_epochs):
             else:
                 loss = loss_fn(output, x)
             loss.backward()
-            nan_list = check_nan_gradients(model)
-            if len(nan_list) > 0:
-                logger.error(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] in parameters {nan_list}')
-                raise ValueError(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] in parameters {nan_list}')
+            nan_name = check_nan_gradients(model)
+            if nan_name is not None:
+                logger.error(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] first in {nan_name} in backward propagation')
+                raise ValueError(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] first in {nan_name} in backward propagation')
             # assert len(nan_list) == 0, f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]'
             optimizer.step()
         # metrics
