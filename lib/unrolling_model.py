@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
-from lib.graph_learning_module import GNNExtrapolation, FeatureExtractor, GraphLearningModule, GNNExtrapolation, GALExtrapolation
+from lib.graph_learning_module import GraphLearningModule # GNNExtrapolation, FeatureExtractor, GraphLearningModule, GNNExtrapolation, GALExtrapolation
 from lib.admm_block import ADMMBlock
 from lib.backup_modules import layer_norm_on_data, layer_recovery_on_data, find_k_nearest_neighbors, SpatialTemporalEmbedding, LR_guess, connect_list
 from torch.nn.parameter import Parameter
+from lib.feature_extractor import GNNExtrapolation, GraphSAGEExtrapolation, FeatureExtractor
 
 class UnrollingModel(nn.Module):
     def __init__(self, num_blocks, device, 
@@ -42,7 +43,7 @@ class UnrollingModel(nn.Module):
                  use_extrapolation=True, # False for LR guess
                  use_old_extrapolation=False,
                  # use_LR_guess=False,
-                 extrapolation_agg_layers=2,
+                 extrapolation_agg_layers=1,
                  sigma_ratio=450,
                  ablation='None',
                  use_one_channel=False,
@@ -68,7 +69,8 @@ class UnrollingModel(nn.Module):
             if self.use_old_extrapolation:
                 self.linear_extrapolation = GNNExtrapolation(graph_info['n_nodes'], t_in, T, self.nearsest_nodes, self.nearest_dists, n_heads, self.device, sigma_ratio=sigma_ratio)
             else:
-                self.linear_extrapolation = GALExtrapolation(graph_info['n_nodes'], t_in, T, self.nearsest_nodes, signal_channels, n_heads, device, n_layers=extrapolation_agg_layers)
+                self.linear_extrapolation = GraphSAGEExtrapolation(graph_info['n_nodes'], t_in, T, self.nearsest_nodes, signal_channels, n_heads, device, interval=interval, n_layers=extrapolation_agg_layers)
+                # self.linear_extrapolation = GALExtrapolation(graph_info['n_nodes'], t_in, T, self.nearsest_nodes, signal_channels, n_heads, device, n_layers=extrapolation_agg_layers)
         
         self.use_st_emb = use_st_emb
         if self.use_st_emb:
@@ -98,23 +100,31 @@ class UnrollingModel(nn.Module):
         for i in range(self.num_blocks):
             self.model_blocks.append(nn.ModuleDict(
                 {
-                    'feature_extractor': FeatureExtractor(
-                        n_in=signal_emb_channels if i == 0 else signal_rec_emb_channels,
-                        n_out=feature_channels,
-                        # n_nodes=graph_info['n_nodes'],
-                        n_heads=n_heads,
+                    'feature_extractor':FeatureExtractor(
+                        in_features=signal_emb_channels if i == 0 else signal_rec_emb_channels,
+                        out_features=feature_channels,
                         nearest_nodes=self.nearsest_nodes,
-                        # nearest_dists=self.nearest_dists,
+                        n_heads=n_heads,
                         device=device,
-                        n_layers=GNN_layers,
-                        # sigma=graph_sigma,
-                        alpha=GNN_alpha,
-                        # use_dist_conv=use_dist_conv,
-                        use_graph_agg=True,
-                        n_nodes=graph_info['n_nodes'],
-                        sigma_ratio=450,
-                        nearest_dist=self.nearest_dists
+                        interval=interval
                     ),
+                    # 'feature_extractor': FeatureExtractor(
+                    #     n_in=signal_emb_channels if i == 0 else signal_rec_emb_channels,
+                    #     n_out=feature_channels,
+                    #     # n_nodes=graph_info['n_nodes'],
+                    #     n_heads=n_heads,
+                    #     nearest_nodes=self.nearsest_nodes,
+                    #     # nearest_dists=self.nearest_dists,
+                    #     device=device,
+                    #     n_layers=GNN_layers,
+                    #     # sigma=graph_sigma,
+                    #     alpha=GNN_alpha,
+                    #     # use_dist_conv=use_dist_conv,
+                    #     use_graph_agg=True,
+                    #     n_nodes=graph_info['n_nodes'],
+                    #     sigma_ratio=450,
+                    #     nearest_dist=self.nearest_dists
+                    # ),
                     'ADMM_block': ADMMBlock(
                         T=T,
                         n_nodes=graph_info['n_nodes'],

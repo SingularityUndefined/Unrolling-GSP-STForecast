@@ -13,8 +13,8 @@ model:
   t_out: 12
   kNN: 4
   interval: 4
-  num_blocks: 4
-  num_layers: 30
+  num_blocks: 5
+  num_layers: 25
   CG_iters: 3
   PGD_iters: 3
   num_heads: 4

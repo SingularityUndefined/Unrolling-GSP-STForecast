@@ -9,6 +9,8 @@ import logging
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import math
+from tensorboard.backend.event_processing import event_accumulator
+import pandas as pd
 
 
 def seed_everything(seed=11):
@@ -205,7 +207,7 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
             if config['normed_loss']:
                 if loss_fn is not None:
                     if masked_flag:
-                        loss = loss_fn(normed_output[:, config['t_in']:], normed_x[:, config['t_in']:])
+                        loss = loss_fn(normed_output[:, config['model']['t_in']:], normed_x[:, config['model']['t_in']:])
                     else:
                         loss = loss_fn(normed_output, normed_x)
                     running_loss += loss.item()
@@ -216,7 +218,7 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
                 output = data_normalization.recover_data(normed_output, config['model']['use_one_channel'])
                 if loss_fn is not None:
                     if masked_flag:
-                        loss = loss_fn(output[:,config['t_in']:], x[:,config['t_in']:])
+                        loss = loss_fn(output[:,config['model']['t_in']:], x[:,config['model']['t_in']:])
                     else:
                         loss = loss_fn(output, x)
                     running_loss += loss.item()
@@ -226,11 +228,11 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
             # output = output * (train_max - train_min) + train_min
             # output = output * train_std + train_mean
 
-            rec_mse += ((x[:,:config['t_in']] - output[:,:config['t_in']]) ** 2).mean().item()
+            rec_mse += ((x[:,:config['model']['t_in']] - output[:,:config['model']['t_in']]) ** 2).detach().cpu().mean().item()
             if not use_one_channel:
-                rec_mse_d += ((x[:,:config['t_in']] - output[:,:config['t_in']]) ** 2).mean((0,1,2)).cpu().numpy()# .item()
+                rec_mse_d += ((x[:,:config['model']['t_in']] - output[:,:config['model']['t_in']]) ** 2).detach().cpu().mean((0,1,2)).cpu().numpy()# .item()
             if masked_flag:
-                x, output = x[:,config['t_in']:], output[:,config['t_in']:]
+                x, output = x[:,config['model']['t_in']:], output[:,config['model']['t_in']:]
             
             # if loss_fn is not None:
             #     loss = loss_fn(output, x)
@@ -239,24 +241,24 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
             
             # x, output = x[:,:,:,1], output[:,:,:,1]
             if masked_flag:
-                pred_mse += ((x - output) ** 2).mean().item()
-                pred_mae += (torch.abs(output - x)).mean().item()
+                pred_mse += ((x - output) ** 2).detach().cpu().mean().item()
+                pred_mae += (torch.abs(output - x)).detach().cpu().mean().item()
                 mask = (x > 1e-8)
-                pred_mape += (torch.abs(output[mask] - x[mask]) / x[mask]).mean().item() * 100
+                pred_mape += (torch.abs(output[mask] - x[mask]) / x[mask]).detach().cpu().mean().item() * 100
             else:
-                x_pred = x[:,config['t_in']:]
-                output_pred = output[:,config['t_in']:]
+                x_pred = x[:,config['model']['t_in']:]
+                output_pred = output[:,config['model']['t_in']:]
                 mask = x_pred > 1e-8
-                pred_mse += ((x_pred - output_pred) ** 2).mean().item()
-                pred_mae += (torch.abs(output_pred - x_pred)).mean().item()
-                pred_mape += (torch.abs(output_pred[mask] - x_pred[mask]) / x_pred[mask]).mean().item() * 100
+                pred_mse += ((x_pred - output_pred) ** 2).detach().cpu().mean().item()
+                pred_mae += (torch.abs(output_pred - x_pred)).detach().cpu().mean().item()
+                pred_mape += (torch.abs(output_pred[mask] - x_pred[mask]) / x_pred[mask]).detach().cpu().mean().item() * 100
 
                 if not use_one_channel:
-                    pred_mse_d += ((x_pred - output_pred) ** 2).mean((0,1,2)).cpu().numpy()
-                    pred_mae_d += (torch.abs(output_pred - x_pred)).mean((0,1,2)).cpu().numpy()
+                    pred_mse_d += ((x_pred - output_pred) ** 2).detach().mean((0,1,2)).cpu().numpy()
+                    pred_mae_d += (torch.abs(output_pred - x_pred)).detach().mean((0,1,2)).cpu().numpy()
                     for i in range(signal_channels):
                         mask_i = x_pred[:,:,:,i] > 1e-8
-                        pred_mape_d[i] += (torch.abs(output_pred[:,:,:,i][mask_i] - x_pred[:,:,:,i][mask_i]) / x_pred[:,:,:,i][mask_i]).mean().item() * 100
+                        pred_mape_d[i] += (torch.abs(output_pred[:,:,:,i][mask_i] - x_pred[:,:,:,i][mask_i]) / x_pred[:,:,:,i][mask_i]).detach().cpu().mean().item() * 100
             # break
 
     rec_rmse = math.sqrt(rec_mse / len(val_loader))
@@ -308,7 +310,9 @@ def check_nan_gradients(model:nn.Module):
     nan_list = [] # list of parameters with NaN gradients and inf gradients
     for name, param in model.named_parameters():
         if param.grad is not None:
-            if torch.isnan(param.grad).any() or torch.isnan(param).any() or torch.isinf(param.grad).any() or torch.isinf(param).any():
+            param_detached = param.detach().cpu()
+            grad_detached = param.grad.detach().cpu()
+            if torch.isnan(grad_detached).any() or torch.isnan(param_detached).any() or torch.isinf(grad_detached).any() or torch.isinf(param_detached).any():
                 nan_list.append(name)
     return nan_list
 
@@ -323,8 +327,48 @@ def log_parameters_scalars(model:nn.Module, name_list:list):
             if check_name in name:
                 name_split = name.split('.')
                 block_id, param_name = name_split[1], name_split[-1]
-                param_dicts[check_name][f'{param_name}_{block_id}_min'] = param.min().item()
-                param_dicts[check_name][f'{param_name}_{block_id}_max'] = param.max().item()
-                grad_dict[f'{param_name}_{block_id}'] = param.grad.data.norm(2).item()
+                param_dicts[check_name][f'{param_name}_{block_id}_min'] = param.detach().cpu().min().item()
+                param_dicts[check_name][f'{param_name}_{block_id}_max'] = param.detach().cpu().max().item()
+                grad_dict[f'{param_name}_{block_id}'] = param.grad.data.detach().cpu().norm(2).item()
                 # logger.info(f'\t {name}: ({param.min():.4f}, {param.max():.4f})\t grad (L2 norm): {param.grad.data.norm(2).item():.4f}')
     return param_dicts, grad_dict
+
+def dataframe_from_tensorboard(log_dir, selected_tag):
+    """
+    处理 TensorBoard 日志数据
+    :param log_dir: TensorBoard 日志目录
+    :return: 返回处理后的数据
+    """
+    ea = event_accumulator.EventAccumulator(log_dir)
+    ea.Reload()
+
+    # 获取所有的 tags
+    tags = ea.Tags()
+    print("Available tags:", tags)
+
+    # 提取某个 tag 的数据（例如 'train/loss'）
+    scalar_data = ea.Scalars(selected_tag)
+
+    # 将数据转换为 DataFrame
+
+    df = pd.DataFrame({
+        "step": [e.step for e in scalar_data],
+        "value": [e.value for e in scalar_data]
+    })
+
+    return df
+
+def plot_dataframe(df, title="Training Loss Curve"):
+    """
+    绘制 DataFrame 数据
+    :param df: DataFrame 数据
+    :param title: 图表标题
+    """
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(df["step"], df["value"])
+    plt.xlabel("Step")
+    plt.ylabel("Value")
+    plt.title(title)
+    plt.grid(True)
+    plt.show()
