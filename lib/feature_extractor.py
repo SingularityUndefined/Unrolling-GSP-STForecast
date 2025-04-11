@@ -252,6 +252,7 @@ class GraphSAGEExtrapolation(nn.Module):
 
         self.input_layer = nn.Sequential(
             GraphSAGELayer(self.n_in, self.n_in, self.nearest_nodes, self.n_heads, 1, self.device, use_out_fc=False),
+            Swish(),
             TemporalHistoryLayer(self.n_in, self.n_in, self.interval),
             Swish()
             )
@@ -262,6 +263,7 @@ class GraphSAGEExtrapolation(nn.Module):
                 *[
                     nn.Sequential(
                         GraphSAGELayer(self.n_in, self.n_in, self.nearest_nodes, self.n_heads, self.n_heads, self.device, use_out_fc=False, use_multihead_fc=False),
+                        Swish(),
                         TemporalHistoryLayer(self.n_in, self.n_in, self.interval),
                         Swish()
                     ) for i in range(self.n_layers - 1)
@@ -299,7 +301,8 @@ class FeatureExtractor(nn.Module):
         self.graph_sage = GraphSAGELayer(in_features, out_features, self.nearest_nodes, self.n_heads, 1, self.device, use_out_fc=True)
         # self.temporal_hist = TemporalHistoryLayer(in_features, out_features, interval)
         self.temporal_hist = TemporalHistoryLayer(out_features, out_features, interval)
-        self.swish = Swish()
+        self.swish1 = Swish()
+        self.swish2 = Swish()
 
     def forward(self, x):
         # x: (batch_size, num_nodes, in_features)
@@ -307,8 +310,9 @@ class FeatureExtractor(nn.Module):
         B, T, N, C = x.size()
         # Extract spatial features
         spatial_features = self.graph_sage(x)  # (batch_size, num_nodes, n_heads, out_features)
+        spatial_features = self.swish1(spatial_features)
         features = self.temporal_hist(spatial_features)
-        features = self.swish(features)
+        features = self.swish2(features)
         return features # temporal_features
         # Extract temporal features
         # temporal_features = self.temporal_hist(x).unsqueeze(-2)# .reshape(B, T, N, self.n_heads, -1)  # (batch_size, num_nodes, n_heads, out_features)

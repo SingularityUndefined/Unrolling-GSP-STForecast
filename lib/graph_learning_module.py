@@ -459,7 +459,7 @@ class GraphLearningModule(nn.Module):
     '''
     learning the directed and undirected weights from features
     '''
-    def __init__(self, T, n_nodes, connect_list, nearest_nodes, n_heads, interval, device, n_channels=None, sigma=6, Q1_init=1.2, Q2_init=0.8, M_init=1.5, shared_params=True) -> None:
+    def __init__(self, T, n_nodes, connect_list, nearest_nodes, n_heads, interval, device, n_channels=None, sigma=6, Q1_init=1, Q2_init=0.8, M_init=1.5, shared_params=True) -> None:
         '''
         Args:
             u_edges (torch.Tensor) in (n_edges, 2) # nodes regularized
@@ -487,12 +487,14 @@ class GraphLearningModule(nn.Module):
         self.Q1_init = Q1_init
         self.Q2_init = Q2_init
         self.M_init = M_init
-        q_form = torch.zeros((self.n_heads, self.n_channels, self.n_channels), device=self.device)
-        q_form[:,:self.n_out, :self.n_out] = torch.diag_embed(torch.ones((self.n_heads, self.n_out), device=self.device)) # tall matrix, self.n_out > self.n_channels
+
+        q_form = torch.diag_embed(torch.ones((self.n_heads, self.n_channels), device=self.device))
+        # q_form = torch.zeros((self.n_heads, self.n_channels, self.n_channels), device=self.device)
+        # q_form[:,:self.n_out, :self.n_out] = torch.diag_embed(torch.ones((self.n_heads, self.n_out), device=self.device)) # tall matrix, self.n_out > self.n_channels
 
         # Question: low-rank assumption, makes sense?
         # add random noise, small value
-        q_form = q_form + torch.randn((self.n_heads, self.n_channels, self.n_channels), device=self.device) * 0.01
+        # q_form = q_form + torch.randn((self.n_heads, self.n_channels, self.n_channels), device=self.device) * 0.01
         # all variables shared across time
         multiQ_init = q_form * self.Q1_init
         # multiQ2_init = q_form * self.Q2_init
