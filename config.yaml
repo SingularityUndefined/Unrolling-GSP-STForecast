@@ -28,3 +28,9 @@ ADMM_params:
   mu_d1: 3
   mu_d2: 3
 
+st_emb_info:
+  spatial_dim: 5
+  t_dim: 10
+  tid_dim: 6
+  diw_dim: 4
+

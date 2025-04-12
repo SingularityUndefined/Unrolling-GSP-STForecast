@@ -18,12 +18,16 @@ with open("config.yaml", 'r') as f:
     config = yaml.safe_load(f)
 
 parser = argparse.ArgumentParser()
-
 # device and data
 parser.add_argument('--cuda', help='CUDA device', type=int)
 parser.add_argument('--dataset', help='dataset name', type=str)
 parser.add_argument('--batchsize', help='batch size', type=int)
-parser.add_argument('--mode', help='normalization mode', default='normalize', type=str)
+parser.add_argument('--mode', help='normalization mode', default='standardize', type=str)
+
+# parameters test
+parser.add_argument('--neighbors', help='kNN neighbors', default=config['model']['kNN'], type=int)
+parser.add_argument('--interval', help='intervals for time graph', default=config['model']['interval'], type=int)
+parser.add_argument('--FElayers', help='feature extractor layers', default=1, type=int)
 
 # experiment type
 parser.add_argument('--ablation', help='operator to elimnate in ablation study', default='None', type=str)#action='store_true', help='run ablation model')
@@ -40,12 +44,15 @@ parser.add_argument('--stepsize', help='stepLR stepsize', default=8, type=int)
 parser.add_argument('--gamma', help='stepLR gamma', default=0.2, type=float)
 
 # training settings
-parser.add_argument('--epochs', help='running epochs', default=30, type=int)
+parser.add_argument('--epochs', help='running epochs', default=70, type=int)
 
 # log settings
 parser.add_argument('--loggrad', help='log gradient norms', default=20, type=int) # -1 stand for no log, 0 for log all, >0 for log every n iterations
 
 args = parser.parse_args()
+
+config['model']['kNN'] = args.neighbors
+config['model']['interval'] = args.interval
 
 # seed, device, training settings
 seed_everything(args.seed)
@@ -91,25 +98,38 @@ def get_degrees(n_nodes, u_edges:torch.Tensor):
 k_hop = config['model']['kNN']
 interval = config['model']['interval']
 dataset_dir = '/home/disk/qij/TS_datasets/PEMS0X_data/'
-experiment_name = f'{k_hop}_hop_{interval}_int_lr_{learning_rate:.0e}_seed{args.seed}'
+
+experiment_dir = f'lr_{learning_rate:.0e}_seed_{args.seed}'
+# experiment_name = f'{k_hop}_hop_{interval}_int_lr_{learning_rate:.0e}_seed{args.seed}'
+dataset_name = args.dataset
+num_admm_blocks = config['model']['num_blocks']
+num_heads = config['model']['num_heads']
+interval = config['model']['interval']
+feature_channels = config['model']['feature_channels']
+ADMM_iters = config['model']['num_layers']
+
+experiment_name = f"{dataset_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f"
 
 if args.ablation != 'None':
     experiment_name = f'wo_{args.ablation}' + experiment_name
 if not config['model']['use_extrapolation']:
     experiment_name = 'LR_' + experiment_name
 
-if config['model']['use_one_channel']:
-    experiment_name = '1channel_' + experiment_name
+if not config['model']['use_one_channel']:
+    experiment_name = 'AllChannel_' + experiment_name
 
-if not config['model']['shared_params']:
-    experiment_name = 'diffM_' + experiment_name
+if config['model']['shared_params']:
+    experiment_name = 'shared_' + experiment_name
 
 if config['normed_loss']:
     experiment_name = experiment_name + '_normed_loss'
 else:
     experiment_name = experiment_name + '_true_loss'
 
-dataset_name = args.dataset
+experiment_name = os.path.join(experiment_dir, experiment_name)
+
+log_filename = f"nn_{k_hop}_int_{interval}_{loss_name}.log"
+
 T = config['model']['t_in'] + config['model']['t_out']
 t_in = config['model']['t_in']
 stride = config['data_stride']
@@ -136,10 +156,7 @@ else:
     print('min value of data', data_normalization.min[...,0].min(), data_normalization.min[...,0].max())
     print('max value of data', data_normalization.max[...,0].min(), data_normalization.max[...,0].max())
 
-num_admm_blocks = config['model']['num_blocks']
-num_heads = config['model']['num_heads']
-interval = config['model']['interval']
-feature_channels = config['model']['feature_channels']
+
 ADMM_info = {
                  'ADMM_iters':config['model']['num_layers'],
                  'CG_iters': config['model']['CG_iters'],
@@ -154,7 +171,7 @@ model_pretrained_path = None
 
 
 print('args.ablation', args.ablation)
-model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, interval, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, use_extrapolation=config['model']['use_extrapolation'], use_one_channel=config['model']['use_one_channel'], shared_params=config['model']['shared_params']).to(device)
+model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, interval, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, st_emb_info=config['st_emb_info'], use_extrapolation=config['model']['use_extrapolation'], extrapolation_agg_layers=args.FElayers, use_one_channel=config['model']['use_one_channel'], shared_params=config['model']['shared_params']).to(device)
 # 'UnrollingForecasting/MainExperiments/models/v2/PEMS04/direct_4b_4h_6f/val_15.pth'
 
 if model_pretrained_path is not None:
@@ -177,25 +194,24 @@ if args.use_stepLR:
     scheduler = lr_scheduler.StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
 
 # tensorboard logger
-tensorboard_logdir = f'./dense_logs/TB_log/{experiment_name}/{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f'
+tensorboard_logdir = f'./dense_logs_new/TB_log/{experiment_name}/nn_{k_hop}_int_{interval}_{loss_name}'
 os.makedirs(tensorboard_logdir, exist_ok=True)
 writer = SummaryWriter(tensorboard_logdir)
 
 # create loggers
-log_dir = f'./dense_logs/train_Logs/{experiment_name}'
+log_dir = f'./dense_logs_new/train_Logs/{experiment_name}'
 os.makedirs(log_dir, exist_ok=True)
-log_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.log'
 
 logger = setup_logger('logger1', os.path.join(log_dir, log_filename), logging.DEBUG, to_console=True)
 
 if args.loggrad != -1:
-    grad_logger_dir = f'./dense_logs/grad_logs/{experiment_name}'
+    grad_logger_dir = f'./dense_logs_new/grad_logs/{experiment_name}'
     os.makedirs(grad_logger_dir, exist_ok=True)
     grad_logger = setup_logger('logger2', os.path.join(grad_logger_dir, log_filename), logging.INFO, to_console=False)
 
 # model save dir
-debug_model_path = os.path.join(f'./dense_logs/debug_models/{experiment_name}', f'{dataset_name}/{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
-model_dir = os.path.join(f'./dense_logs/models/{experiment_name}', f'{dataset_name}/{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.pth')
+debug_model_path = os.path.join(f'./dense_logs_new/debug_models/{experiment_name}', f'nn_{k_hop}_int_{interval}_{loss_name}.pth')
+model_dir = os.path.join(f'./dense_logs_new/models/{experiment_name}', f'nn_{k_hop}_int_{interval}_{loss_name}')
 os.makedirs(model_dir, exist_ok=True)
 
 # print('log dir', log_dir)
@@ -230,9 +246,9 @@ print('tensorboard log path', tensorboard_logdir)
 masked_flag = False
 # train models
 # test = True
-plot_list = f'./dense_logs/loss_curves/{experiment_name}'
+plot_list = f'./dense_logs_new/loss_curves/{experiment_name}'
 os.makedirs(plot_list, exist_ok=True)
-plot_filename = f'{dataset_name}_{loss_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f.png'
+plot_filename = f'nn_{k_hop}_int_{interval}_{loss_name}.png'
 plot_path = os.path.join(plot_list, plot_filename)
 
 train_loss_list = []
@@ -336,7 +352,7 @@ for epoch in range(num_epochs):
 
         # clamp data: >0 clamp to [0, args.clamp], =0 clamp to [0, inf), <0 no clamp
         if config['clamp'] > 0:
-            model.clamp_param(config['clamp'], config['clamp'])
+            model.clamp_param(config['clamp']) # remove restrictions for x
         elif config['clamp'] == 0:
             model.clamp_param()
         if args.debug:

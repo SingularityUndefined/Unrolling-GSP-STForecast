@@ -289,6 +289,16 @@ class GraphSAGEExtrapolation(nn.Module):
         y = self.swish(y)
         return torch.cat([x, y], dim=1)
     
+class FElayer(nn.Module):
+    def __init__(self):
+        super(FElayer, self).__init__()
+    def forward(self, x):
+        '''
+        input: embedded signals or signals itself
+        output:
+        '''
+        return
+    
 class FeatureExtractor(nn.Module):
     '''
     extract temporal and spatial features, then concat / add

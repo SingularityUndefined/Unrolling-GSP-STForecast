@@ -7,3 +7,8 @@ lib_old/
 logs/
 Discussion_Notes/
 dense_logs/
+dense_logs_new/
+old_training_commands/
+*_old*
+*old/
+

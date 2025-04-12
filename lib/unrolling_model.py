@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from lib.graph_learning_module import GraphLearningModule # GNNExtrapolation, FeatureExtractor, GraphLearningModule, GNNExtrapolation, GALExtrapolation
+from lib.graph_learning_module_old1 import GraphLearningModule # GNNExtrapolation, FeatureExtractor, GraphLearningModule, GNNExtrapolation, GALExtrapolation
 from lib.admm_block import ADMMBlock
 from lib.backup_modules import layer_norm_on_data, layer_recovery_on_data, find_k_nearest_neighbors, SpatialTemporalEmbedding, LR_guess, connect_list
 from torch.nn.parameter import Parameter
