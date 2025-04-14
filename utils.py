@@ -11,6 +11,7 @@ from tqdm import tqdm
 import math
 from tensorboard.backend.event_processing import event_accumulator
 import pandas as pd
+import argparse
 
 
 def seed_everything(seed=11):
@@ -373,3 +374,11 @@ def plot_dataframe(df, title="Training Loss Curve"):
     plt.title(title)
     plt.grid(True)
     plt.show()
+
+
+def generate_experiment_name(args: argparse.Namespace, config:dict):
+    pass
+
+def log_tensorboard():
+    pass
+

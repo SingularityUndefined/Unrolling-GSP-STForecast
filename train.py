@@ -13,6 +13,7 @@ from collections import Counter
 import sys
 from tensorboardX import SummaryWriter
 import yaml
+import gc
 
 with open("config.yaml", 'r') as f: 
     config = yaml.safe_load(f)

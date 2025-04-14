@@ -11,7 +11,7 @@ data_stride: 3
 model:
   t_in: 12
   t_out: 12
-  kNN: 4
+  kNN: 6
   interval: 4
   num_blocks: 5
   num_layers: 25

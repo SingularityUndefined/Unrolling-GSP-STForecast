@@ -290,14 +290,41 @@ class GraphSAGEExtrapolation(nn.Module):
         return torch.cat([x, y], dim=1)
     
 class FElayer(nn.Module):
-    def __init__(self):
+    def __init__(self, in_features, out_features, nearest_nodes, n_heads, device, interval, parallel=True):
         super(FElayer, self).__init__()
+        self.nearest_nodes = nearest_nodes
+        self.n_heads = n_heads
+        self.device = device
+        # self.temporal_hist = TemporalHistoryLayer(in_features, out_features, interval)
+        self.swish1 = Swish()
+        self.swish2 = Swish()
+        self.parallel = parallel
+        if self.parallel:
+            self.graph_sage = GraphSAGELayer(in_features, out_features, self.nearest_nodes, self.n_heads, 1, self.device, use_out_fc=True)
+            self.temporal_hist = TemporalHistoryLayer(in_features, out_features * n_heads, interval)
+        else:
+            self.graph_sage = GraphSAGELayer(in_features, out_features, self.nearest_nodes, self.n_heads, 1, self.device, use_out_fc=True)
+            self.temporal_hist = TemporalHistoryLayer(out_features, out_features, interval)
     def forward(self, x):
         '''
         input: embedded signals or signals itself
-        output:
+        output: concatenate of spatial and temporal features
         '''
-        return
+        B, T, N, C = x.size()
+        spatial_features = self.graph_sage(x) # in (B, T, N, h, C_out)
+        spatial_features = self.swish1(spatial_features)
+        if self.parallel:
+            # concate features
+            temporal_features = self.temporal_hist(x).unsqueeze(-2).reshape(B, T, N, self.n_heads, -1) # in (B, T, N, h, C_out)
+            temporal_features = self.swish2(temporal_features)
+            features = spatial_features + temporal_features
+            # features = torch.cat([spatial_features, temporal_features], dim=-1) # in (B, T, N, h, C_out * 2)
+
+        else:
+            # GraphSAGE -> TH
+            features = self.temporal_hist(spatial_features) # in (B, T, N, h, C_out)
+            features = self.swish2(features)
+        return features
     
 class FeatureExtractor(nn.Module):
     '''
