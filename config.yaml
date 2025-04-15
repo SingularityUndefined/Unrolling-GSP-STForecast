@@ -21,7 +21,9 @@ model:
   feature_channels: 6
   use_extrapolation: True
   use_one_channel: True
-  shared_params: False
+  sharedM: False
+  sharedQ: False
+  diff_interval: True
 
 ADMM_params:
   mu_u: 3
