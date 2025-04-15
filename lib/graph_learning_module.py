@@ -8,7 +8,7 @@ class GraphLearningModule(nn.Module):
     '''
     learning the directed and undirected weights from features
     '''
-    def __init__(self, T, n_nodes, connect_list, nearest_nodes, n_heads, interval, device, n_channels=None, sigma=6, Q1_init=1.2, M_init=2, shared_params=True) -> None:
+    def __init__(self, T, n_nodes, connect_list, nearest_nodes, n_heads, interval, device, n_channels=None, sigma=6, Q1_init=1.2, M_init=2, sharedM=True, sharedQ=True, diff_interval=True) -> None:
         '''
         Args:
             u_edges (torch.Tensor) in (n_edges, 2) # nodes regularized
@@ -32,7 +32,9 @@ class GraphLearningModule(nn.Module):
         self.n_channels = n_channels
         self.n_out = (self.n_channels + 1) // 2
         # define multiM, multiQs
-        self.shared_params = shared_params
+        self.sharedM = sharedM
+        self.sharedQ = sharedQ
+        self.diff_interval = diff_interval
         self.Q1_init = Q1_init
         # self.Q2_init = Q2_init
         self.M_init = M_init
@@ -45,16 +47,25 @@ class GraphLearningModule(nn.Module):
         # add random noise, small value
         # q_form = q_form + torch.randn((self.n_heads, self.n_channels, self.n_channels), device=self.device) * 0.01
         # all variables shared across time
-        multiQ_init = q_form * self.Q1_init
+        multiQ_init = q_form # * self.Q1_init
         # multiQ2_init = q_form * self.Q2_init
         multiM_init = torch.diag_embed(torch.ones((self.n_heads, self.n_channels), device=self.device)) * self.M_init
 
-        if not self.shared_params:
+        if not self.sharedQ:
             # multiQ1_init = multiQ1_init.unsqueeze(0).repeat(T-1, 1, 1, 1)
             # multiQ2_init = multiQ2_init.unsqueeze(0).repeat(T-1, 1, 1, 1)
             multiQ_init = multiQ_init.unsqueeze(0).repeat(T-1, 1, 1, 1)
+        if not self.sharedM:
             # multiQ2_init = multiQ2_init.unsqueeze(0).repeat(T, 1, 1, 1)
             multiM_init = multiM_init.unsqueeze(0).repeat(T, 1, 1 , 1)
+        
+        if self.diff_interval:
+            if self.sharedQ:
+                multiQ_init = multiQ_init.unsqueeze(0).repeat(self.interval, 1, 1, 1) # in (interval, n_heads, n_channels, n_channels)
+                multiQ_init = multiQ_init * torch.linspace(1, Q1_init, steps=self.interval).reshape(self.interval, 1, 1, 1).to(self.device) # in (interval, n_heads, n_channels, n_channels)
+            else:
+                multiQ_init = multiQ_init.unsqueeze(1).repeat(1, self.interval, 1, 1, 1) # in (T-1, interval, n_heads, n_channels, n_channels)
+                multiQ_init = multiQ_init * torch.linspace(1, Q1_init, steps=self.interval).reshape(1, self.interval, 1, 1, 1).to(self.device) # in (T-1, interval, n_heads, n_channels, n_channels)
 
         self.multiQ = Parameter(multiQ_init, requires_grad=True)
         # self.multiQ2 = Parameter(multiQ2_init, requires_grad=True)
@@ -80,7 +91,7 @@ class GraphLearningModule(nn.Module):
 
         df = features.unsqueeze(3) - feature_j # in (B, T, N, k, n_heads, n_channels)
         # print(self.multiM.size(), df.size())
-        if self.shared_params:
+        if self.sharedM:
             Mdf = torch.einsum('hij, btnehj -> btnehi', self.multiM, df)
         else:
             Mdf = torch.einsum('thij, btnehj -> btnehi', self.multiM, df) # in (B, T, N, k, n_heads, n_channels)
@@ -194,12 +205,19 @@ class GraphLearningModule(nn.Module):
         features_i = features[:,self.temp_indice.view(-1)].view(B, T-1, self.interval, self.n_nodes, -1, self.n_channels) # in (B, T - 1, interval, N, n_heads, n_channels)
         df = features_i - features_j.unsqueeze(2)
         # multiply with Qs
-        if self.shared_params:
+        if self.sharedQ:
+            if self.diff_interval:
+                Q_df = torch.einsum('vhij, btvnhj -> btvnhi', self.multiQ, df) # in (B, T-1, interval, N, n_heads, n_channels)
             # Q_j = torch.einsum('hij, btnhj -> btnhi', self.multiQ, features_j)
-            Q_df = torch.einsum('hij, btvnhj -> btvnhi', self.multiQ, df)
+            else:
+                Q_df = torch.einsum('hij, btvnhj -> btvnhi', self.multiQ, df)
         else:
+            if self.diff_interval:
+                # Q_j = torch.einsum('thij, btnhj -> btnhi', self.multiQ, features_j)
+                Q_df = torch.einsum('tvhij, btvnhj -> btvnhi', self.multiQ, df)
             # Q_j = torch.einsum('thij, btnhj -> btnhi', self.multiQ, features_j)
-            Q_df = torch.einsum('thij, btvnhj -> btvnhi', self.multiQ, df)
+            else:
+                Q_df = torch.einsum('thij, btvnhj -> btvnhi', self.multiQ, df)
         # assertation
         assert not torch.isnan(Q_df).any(), f'Q_j has NaN value: Q2 in ({self.multiQ.max().item():.4f}, {self.multiQ.min().item():.4f}; features in ({features.max().item()}, {features.min().item()}))'
         # assert not torch.isnan(Q_i).any(), f'Q_i has NaN value: Q1 in ({self.multiQ1.max().item():.4f}, {self.multiQ1.min().item():.4f}, features in ({features.max()}, {features.min()})'

@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from lib.graph_learning_module_old1 import GraphLearningModule # GNNExtrapolation, FeatureExtractor, GraphLearningModule, GNNExtrapolation, GALExtrapolation
+from lib.graph_learning_module import GraphLearningModule # GNNExtrapolation, FeatureExtractor, GraphLearningModule, GNNExtrapolation, GALExtrapolation
 from lib.admm_block import ADMMBlock
 from lib.backup_modules import layer_norm_on_data, layer_recovery_on_data, find_k_nearest_neighbors, SpatialTemporalEmbedding, LR_guess, connect_list
 from torch.nn.parameter import Parameter
@@ -47,7 +47,9 @@ class UnrollingModel(nn.Module):
                  sigma_ratio=450,
                  ablation='None',
                  use_one_channel=False,
-                 shared_params=True,
+                 sharedM=False,
+                 sharedQ=True,
+                 diff_interval=True
                  ):
         super().__init__()
         self.num_blocks = num_blocks
@@ -146,7 +148,9 @@ class UnrollingModel(nn.Module):
                         interval=interval,
                         device=device,
                         n_channels=feature_channels,
-                        shared_params=shared_params,
+                        sharedM=sharedM,
+                        sharedQ=sharedQ,
+                        diff_interval=diff_interval
                     )
                 }
             ))
