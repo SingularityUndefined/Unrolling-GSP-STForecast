@@ -1,4 +1,5 @@
-cuda_device=0
+cuda_device=3
+seed=42
 python_path="python"
 while getopts "c:p:" opt; do
     case $opt in
@@ -11,10 +12,10 @@ done
 
 
 commands=(
-    "$python_path train.py --dataset PEMS04 --cuda 1 --batchsize 12 --neighbors 6 --loggrad -1"
-    "$python_path train.py --dataset PEMS04 --cuda 1 --batchsize 16 --neighbors 4 --loggrad -1"
-    "$python_path train.py --dataset PEMS04 --cuda 1 --batchsize 12 --neighbors 8 --loggrad -1"
-    "$python_path train.py --dataset PEMS04 --cuda 1 --batchsize 16 --neighbors 2 --loggrad -1"
+    # "$python_path train.py --dataset PEMS04 --cuda $cuda_device --batchsize 12 --neighbors 6 --loggrad -1"
+    "$python_path train.py --dataset PEMS04 --cuda $cuda_device --batchsize 16 --neighbors 4 --loggrad -1 --seed $seed"
+    "$python_path train.py --dataset PEMS04 --cuda $cuda_devoce --batchsize 12 --neighbors 8 --loggrad -1 --seed $seed"
+    "$python_path train.py --dataset PEMS04 --cuda $cuda_device --batchsize 16 --neighbors 2 --loggrad -1 --seed $seed"
 
 )
 
