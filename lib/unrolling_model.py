@@ -47,7 +47,9 @@ class UnrollingModel(nn.Module):
                  sigma_ratio=450,
                  ablation='None',
                  use_one_channel=False,
-                 shared_params=True,
+                 sharedM=False,
+                 sharedQ=True,
+                 diff_interval=True
                  ):
         super().__init__()
         self.num_blocks = num_blocks
@@ -146,7 +148,9 @@ class UnrollingModel(nn.Module):
                         interval=interval,
                         device=device,
                         n_channels=feature_channels,
-                        shared_params=shared_params,
+                        sharedM=sharedM,
+                        sharedQ=sharedQ,
+                        diff_interval=diff_interval
                     )
                 }
             ))

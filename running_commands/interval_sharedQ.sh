@@ -1,4 +1,4 @@
-cuda_device=1
+cuda_device=0
 seed=42
 python_path="python"
 while getopts "c:p:" opt; do
@@ -12,13 +12,13 @@ done
 
 
 commands=(
-    "$python_path train.py --dataset PEMS04 --cuda $cuda_device --batchsize 14 --interval 4 --loggrad -1 --seed $seed"
-    "$python_path train.py --dataset PEMS04 --cuda $cuda_device --batchsize 12 --interval 6 --loggrad -1 --seed $seed"
-    "$python_path train.py --dataset PEMS04 --cuda $cuda_device --batchsize 16 --interval 2 --loggrad -1 --seed $seed"
+    "$python_path train.py --dataset PEMS04 --cuda $cuda_device --batchsize 14 --interval 4 --loggrad -1 --seed $seed --sharedQ"
+    "$python_path train.py --dataset PEMS04 --cuda $cuda_device --batchsize 12 --interval 6 --loggrad -1 --seed $seed --sharedQ"
+    "$python_path train.py --dataset PEMS04 --cuda $cuda_device --batchsize 16 --interval 2 --loggrad -1 --seed $seed --sharedQ"
 
 )
 
-log_file="running_commands/interval_test.log"
+log_file="running_commands/interval_diffM.log"
 echo "--------------NEW RUN-------------" >> $log_file
 
 for cmd in "${commands[@]}"; do
