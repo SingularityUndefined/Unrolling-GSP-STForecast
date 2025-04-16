@@ -108,7 +108,9 @@ class UnrollingModel(nn.Module):
                         nearest_nodes=self.nearsest_nodes,
                         n_heads=n_heads,
                         device=device,
-                        interval=interval
+                        interval=interval,
+                        # parallel=True,
+                        n_layers=extrapolation_agg_layers
                     ),
                     # 'feature_extractor': FeatureExtractor(
                     #     n_in=signal_emb_channels if i == 0 else signal_rec_emb_channels,

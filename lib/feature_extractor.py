@@ -172,6 +172,7 @@ class GraphSAGELayer(nn.Module):
                 x_agg = self.swish1(x_agg)
                 x_agg = self.multihead_fc(x_agg).transpose(-1, -2) # in (B, T, N, n_heads, C)
         
+        # print('graphsage x_agg', x_agg.size())
         if self.use_out_fc:
             x_agg = self.swish2(x_agg)
             x_agg = self.out_fc(x_agg) # in (B, T, N, n_heads, n_out)
@@ -233,13 +234,15 @@ class TemporalHistoryLayer(nn.Module):
             n_heads = x.size(-2)
             input = input.transpose(2,3).reshape(B, T, N, n_heads, -1)
 
+        # print('temp in shape', input.size())
+        # print('weights shape', self.linear.weight.size())
         # Apply the linear transformation
         output = self.linear(input)  # (batch_size, T, num_nodes, *n_heads, out_features)
-
+        # print('temp out shape', output.size())
         return output
     
 class GraphSAGEExtrapolation(nn.Module):
-    def __init__(self, n_nodes, t_in, T, nearest_nodes, n_in, n_heads, device, interval, n_layers=2, parallel=True):
+    def __init__(self, n_nodes, t_in, T, nearest_nodes, n_in, n_heads, device, interval, n_layers=2, parallel=True): # TODO: PARALLEL = FALSE
         super().__init__()
         self.device = device
         self.n_heads = n_heads
@@ -250,7 +253,7 @@ class GraphSAGEExtrapolation(nn.Module):
         self.nearest_nodes = nearest_nodes
         self.interval = interval
 
-        self.input_layer = FElayer(n_in, n_in, nearest_nodes, n_heads, device, interval, parallel=parallel)
+        self.input_layer = FElayer(n_in, n_in, nearest_nodes, n_heads, device, interval, parallel=parallel, use_out_fc=False)
         # self.input_layer = nn.Sequential(
         #     GraphSAGELayer(self.n_in, self.n_in, self.nearest_nodes, self.n_heads, 1, self.device, use_out_fc=False),
         #     Swish(),
@@ -262,7 +265,7 @@ class GraphSAGEExtrapolation(nn.Module):
         if self.n_layers > 1:
             self.SAGEs = nn.Sequential(
                 *[
-                    FElayer(self.n_in, self.n_in, self.nearest_nodes, self.n_heads, self.device, self.interval, parallel=parallel, in_heads=self.n_heads)
+                    FElayer(self.n_in, self.n_in, self.nearest_nodes, self.n_heads, self.device, self.interval, parallel=parallel, in_heads=self.n_heads, use_out_fc=False)
                     # nn.Sequential(
                     #     GraphSAGELayer(self.n_in, self.n_in, self.nearest_nodes, self.n_heads, self.n_heads, self.device, use_out_fc=False, use_multihead_fc=False),
                     #     Swish(),
@@ -293,7 +296,7 @@ class GraphSAGEExtrapolation(nn.Module):
         return torch.cat([x, y], dim=1)
     
 class FElayer(nn.Module):
-    def __init__(self, in_features, out_features, nearest_nodes, n_heads, device, interval, parallel=True, in_heads=1):
+    def __init__(self, in_features, out_features, nearest_nodes, n_heads, device, interval, parallel=True, in_heads=1, use_out_fc=False):
         super(FElayer, self).__init__()
         self.nearest_nodes = nearest_nodes
         self.n_heads = n_heads
@@ -302,23 +305,39 @@ class FElayer(nn.Module):
         self.swish1 = Swish()
         self.swish2 = Swish()
         self.parallel = parallel
+        self.in_heads = in_heads
+        # self.in_heads = in_heads
+        # self.is_input_layer = is_input_layer
+        # if not self.is_input_layer:
+        #     self.in_heads = n_heads
         if self.parallel:
-            self.graph_sage = GraphSAGELayer(in_features, out_features, self.nearest_nodes, self.n_heads, in_heads, self.device, use_out_fc=True)
-            self.temporal_hist = TemporalHistoryLayer(in_features, out_features * n_heads, interval)
+            self.graph_sage = GraphSAGELayer(in_features, out_features, self.nearest_nodes, self.n_heads, in_heads, self.device, use_out_fc=use_out_fc)
+            if in_heads == 1:
+                self.temporal_hist = TemporalHistoryLayer(in_features, out_features * n_heads, interval)
+            else:
+                self.temporal_hist = TemporalHistoryLayer(in_features, out_features, interval)
         else:
-            self.graph_sage = GraphSAGELayer(in_features, out_features, self.nearest_nodes, self.n_heads, in_heads, self.device, use_out_fc=True)
+            self.graph_sage = GraphSAGELayer(in_features, out_features, self.nearest_nodes, self.n_heads, in_heads, self.device, use_out_fc=use_out_fc)
             self.temporal_hist = TemporalHistoryLayer(out_features, out_features, interval)
     def forward(self, x):
         '''
         input: embedded signals or signals itself
         output: concatenate of spatial and temporal features
         '''
-        B, T, N, C = x.size()
+        # print('fe layers', x.size())
+        B, T, N, C = x.size(0), x.size(1), x.size(2), x.size(-1)
+        # print('fe input', x.size())
         spatial_features = self.graph_sage(x) # in (B, T, N, h, C_out)
+        # print('spatial features', spatial_features.size())
         spatial_features = self.swish1(spatial_features)
         if self.parallel:
             # concate features
-            temporal_features = self.temporal_hist(x).unsqueeze(-2).reshape(B, T, N, self.n_heads, -1) # in (B, T, N, h, C_out)
+            # print()
+            temporal_features = self.temporal_hist(x)
+            # print('raw temp features', temporal_features.size())
+            if self.in_heads == 1:
+                temporal_features = temporal_features.unsqueeze(-2).reshape(B, T, N, self.n_heads, -1) # in (B, T, N, h, C_out)
+            # print('temp feature', temporal_features.size())
             temporal_features = self.swish2(temporal_features)
             features = spatial_features + temporal_features
             # features = torch.cat([spatial_features, temporal_features], dim=-1) # in (B, T, N, h, C_out * 2)
@@ -330,18 +349,18 @@ class FElayer(nn.Module):
         return features
     
 class FeatureExtractor(nn.Module):
-    def __init__(self, in_features, out_features, nearest_nodes, n_heads, device, interval, parallel=True, n_layers=2):
+    def __init__(self, in_features, out_features, nearest_nodes, n_heads, device, interval, parallel=False, n_layers=2):
         super(FeatureExtractor, self).__init__()
         self.nearest_nodes = nearest_nodes
         self.n_heads = n_heads
         self.device = device
         self.n_layers = n_layers
         # self.parallel = parallel
-        self.input_layer = FElayer(in_features, out_features, self.nearest_nodes, self.n_heads, self.device, interval, parallel=parallel)
+        self.input_layer = FElayer(in_features, out_features, self.nearest_nodes, self.n_heads, self.device, interval, parallel=parallel, use_out_fc=True)
         if self.n_layers > 1:
             self.fe_layers = nn.Sequential(
                 *[
-                    FElayer(in_features, out_features, self.nearest_nodes, self.n_heads, self.device, interval, parallel=parallel)
+                    FElayer(out_features, out_features, self.nearest_nodes, self.n_heads, self.device, interval, parallel=parallel, in_heads=self.n_heads, use_out_fc=False)
                     for i in range(self.n_layers - 1)
                 ]
             )
@@ -351,6 +370,7 @@ class FeatureExtractor(nn.Module):
         input: embedded signals or signals itself
         output: concatenate of spatial and temporal features
         '''
+        # print('feature extractor',x.size())
         B, T, N, C = x.size()
         features = self.input_layer(x) # in (B, T, N, h, C_out)
         if self.n_layers > 1:

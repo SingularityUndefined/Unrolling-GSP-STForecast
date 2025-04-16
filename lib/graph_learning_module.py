@@ -219,7 +219,7 @@ class GraphLearningModule(nn.Module):
             else:
                 Q_df = torch.einsum('thij, btvnhj -> btvnhi', self.multiQ, df)
         # assertation
-        assert not torch.isnan(Q_df).any(), f'Q_j has NaN value: Q2 in ({self.multiQ.max().item():.4f}, {self.multiQ.min().item():.4f}; features in ({features.max().item()}, {features.min().item()}))'
+        assert not torch.isnan(Q_df).any(), f'Q_j has NaN value: Q in ({self.multiQ.max().item():.4f}, {self.multiQ.min().item():.4f}; features in ({features.max().item()}, {features.min().item()}))'
         # assert not torch.isnan(Q_i).any(), f'Q_i has NaN value: Q1 in ({self.multiQ1.max().item():.4f}, {self.multiQ1.min().item():.4f}, features in ({features.max()}, {features.min()})'
         # multiply two qs
         d = Q_df ** 2 # Q_df * df # in (B, T, interval, N, n_heads, n_channels)

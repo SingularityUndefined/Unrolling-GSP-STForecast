@@ -62,7 +62,7 @@ class ADMMBlock(nn.Module):
         if self.ablation != 'DGLR':
             self.rho_d = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_d_init, requires_grad=True)
         # CGD params, emperical initialized
-        alpha_init = 0.08
+        alpha_init = 0.2
         self.alpha_x_init = alpha_init
         self.alpha_zu_init = alpha_init
         self.alpha_zd_init = alpha_init

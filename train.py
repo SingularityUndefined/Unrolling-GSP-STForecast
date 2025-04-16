@@ -299,7 +299,9 @@ for epoch in range(num_epochs):
         normed_x = data_normalization.normalize_data(x, config['model']['use_one_channel'])
 
         try:
+            # print('train')
             normed_output = model(normed_y, t_list)  # in (B, T, nodes, 1)
+            # print('trained')
             if args.mode == 'normalize':
                 normed_output = nn.ReLU()(normed_output) # data_normalization.normalize_data(normed_output, args.use_one_channel)
             # raise ValueError('raised value error')

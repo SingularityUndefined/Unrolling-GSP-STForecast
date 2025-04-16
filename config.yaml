@@ -2,7 +2,7 @@ num_workers: 4
 learning_rate: 0.0005
 optim: adam
 weight_decay: 0.01
-clamp: 0.8
+clamp: 1.2
 loss_function: Huber
 normed_loss: False
 
@@ -15,10 +15,10 @@ model:
   interval: 4
   num_blocks: 5
   num_layers: 25
-  CG_iters: 5
+  CG_iters: 3
   PGD_iters: 3
   num_heads: 4
-  feature_channels: 6
+  feature_channels: 12
   use_extrapolation: True
   use_one_channel: True
   sharedM: False
@@ -26,9 +26,9 @@ model:
   diff_interval: True
 
 ADMM_params:
-  mu_u: 3
-  mu_d1: 3
-  mu_d2: 3
+  mu_u: 1
+  mu_d1: 0.5
+  mu_d2: 1
 
 st_emb_info:
   spatial_dim: 5
