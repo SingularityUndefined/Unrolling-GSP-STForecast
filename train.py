@@ -29,6 +29,8 @@ parser.add_argument('--mode', help='normalization mode', default='standardize', 
 parser.add_argument('--neighbors', help='kNN neighbors', default=config['model']['kNN'], type=int)
 parser.add_argument('--interval', help='intervals for time graph', default=config['model']['interval'], type=int)
 parser.add_argument('--FElayers', help='feature extractor layers', default=1, type=int)
+parser.add_argument('--numblocks', help='number of blocks', default=config['model']['num_blocks'], type=int)
+parser.add_argument('--numlayers', help='number of ADMM layers per block', default=config['model']['num_layers'], type=int)
 
 # experiment type
 parser.add_argument('--ablation', help='operator to elimnate in ablation study', default='None', type=str)#action='store_true', help='run ablation model')
@@ -54,6 +56,8 @@ args = parser.parse_args()
 
 config['model']['kNN'] = args.neighbors
 config['model']['interval'] = args.interval
+config['model']['num_blocks'] = args.numblocks
+config['model']['num_layers'] = args.numlayers
 
 # seed, device, training settings
 seed_everything(args.seed)
