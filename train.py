@@ -29,8 +29,6 @@ parser.add_argument('--mode', help='normalization mode', default='standardize', 
 parser.add_argument('--neighbors', help='kNN neighbors', default=config['model']['kNN'], type=int)
 parser.add_argument('--interval', help='intervals for time graph', default=config['model']['interval'], type=int)
 parser.add_argument('--FElayers', help='feature extractor layers', default=1, type=int)
-parser.add_argument('--numblocks', help='number of blocks', default=config['model']['num_blocks'], type=int)
-parser.add_argument('--numlayers', help='number of ADMM layers per block', default=config['model']['num_layers'], type=int)
 
 # experiment type
 parser.add_argument('--ablation', help='operator to elimnate in ablation study', default='None', type=str)#action='store_true', help='run ablation model')
@@ -46,6 +44,14 @@ parser.set_defaults(use_stepLR=False)
 parser.add_argument('--stepsize', help='stepLR stepsize', default=8, type=int)
 parser.add_argument('--gamma', help='stepLR gamma', default=0.2, type=float)
 
+parser.add_argument('--sharedM', dest='sharedM', action='store_true')
+parser.set_defaults(sharedM=config['model']['sharedM'])
+
+parser.add_argument('--sharedQ', dest='sharedQ', action='store_true')
+parser.set_defaults(sharedQ=config['model']['sharedQ'])
+
+parser.add_argument('--sharedV', dest='diff_interval', action='store_false')
+parser.set_defaults(diff_interval=config['model']['diff_interval'])
 # training settings
 parser.add_argument('--epochs', help='running epochs', default=70, type=int)
 
@@ -56,8 +62,9 @@ args = parser.parse_args()
 
 config['model']['kNN'] = args.neighbors
 config['model']['interval'] = args.interval
-config['model']['num_blocks'] = args.numblocks
-config['model']['num_layers'] = args.numlayers
+config['model']['sharedM'] = args.sharedM
+config['model']['sharedQ'] = args.sharedQ
+config['model']['diff_interval'] = args.diff_interval
 
 # seed, device, training settings
 seed_everything(args.seed)
@@ -103,6 +110,8 @@ def get_degrees(n_nodes, u_edges:torch.Tensor):
 k_hop = config['model']['kNN']
 interval = config['model']['interval']
 dataset_dir = '/home/disk/qij/TS_datasets/PEMS0X_data/'
+if not os.path.exists(dataset_dir):
+    dataset_dir = '../datasets/PEMS0X_data'
 
 experiment_dir = f'lr_{learning_rate:.0e}_seed_{args.seed}'
 # experiment_name = f'{k_hop}_hop_{interval}_int_lr_{learning_rate:.0e}_seed{args.seed}'
@@ -123,8 +132,14 @@ if not config['model']['use_extrapolation']:
 if not config['model']['use_one_channel']:
     experiment_name = 'AllChannel_' + experiment_name
 
-if config['model']['shared_params']:
-    experiment_name = 'shared_' + experiment_name
+if config['model']['sharedM']:
+    experiment_name = 'shareM_' + experiment_name
+
+if config['model']['sharedQ']:
+    experiment_name = 'shareQ_' + experiment_name
+
+if config['model']['diff_interval']:
+    experiment_name = 'diffV_' + experiment_name
 
 if config['normed_loss']:
     experiment_name = experiment_name + '_normed_loss'
@@ -176,7 +191,7 @@ model_pretrained_path = None
 
 
 print('args.ablation', args.ablation)
-model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, interval, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, st_emb_info=config['st_emb_info'], use_extrapolation=config['model']['use_extrapolation'], extrapolation_agg_layers=args.FElayers, use_one_channel=config['model']['use_one_channel'], shared_params=config['model']['shared_params']).to(device)
+model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, interval, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, st_emb_info=config['st_emb_info'], use_extrapolation=config['model']['use_extrapolation'], extrapolation_agg_layers=args.FElayers, use_one_channel=config['model']['use_one_channel'], sharedM=config['model']['sharedM'], sharedQ=config['model']['sharedQ'], diff_interval=config['model']['diff_interval']).to(device)
 # 'UnrollingForecasting/MainExperiments/models/v2/PEMS04/direct_4b_4h_6f/val_15.pth'
 
 if model_pretrained_path is not None:
