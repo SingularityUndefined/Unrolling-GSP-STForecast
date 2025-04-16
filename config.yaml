@@ -15,7 +15,7 @@ model:
   interval: 4
   num_blocks: 5
   num_layers: 25
-  CG_iters: 3
+  CG_iters: 5
   PGD_iters: 3
   num_heads: 4
   feature_channels: 6
