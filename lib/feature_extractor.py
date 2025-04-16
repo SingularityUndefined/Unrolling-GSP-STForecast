@@ -239,7 +239,7 @@ class TemporalHistoryLayer(nn.Module):
         return output
     
 class GraphSAGEExtrapolation(nn.Module):
-    def __init__(self, n_nodes, t_in, T, nearest_nodes, n_in, n_heads, device, interval, n_layers=2):
+    def __init__(self, n_nodes, t_in, T, nearest_nodes, n_in, n_heads, device, interval, n_layers=2, parallel=True):
         super().__init__()
         self.device = device
         self.n_heads = n_heads
@@ -250,23 +250,26 @@ class GraphSAGEExtrapolation(nn.Module):
         self.nearest_nodes = nearest_nodes
         self.interval = interval
 
-        self.input_layer = nn.Sequential(
-            GraphSAGELayer(self.n_in, self.n_in, self.nearest_nodes, self.n_heads, 1, self.device, use_out_fc=False),
-            Swish(),
-            TemporalHistoryLayer(self.n_in, self.n_in, self.interval),
-            Swish()
-            )
-        self.input_swish = Swish()
+        self.input_layer = FElayer(n_in, n_in, nearest_nodes, n_heads, device, interval, parallel=parallel)
+        # self.input_layer = nn.Sequential(
+        #     GraphSAGELayer(self.n_in, self.n_in, self.nearest_nodes, self.n_heads, 1, self.device, use_out_fc=False),
+        #     Swish(),
+        #     TemporalHistoryLayer(self.n_in, self.n_in, self.interval),
+        #     Swish()
+        #     )
+        # self.input_swish = Swish()
         self.n_layers = n_layers
         if self.n_layers > 1:
             self.SAGEs = nn.Sequential(
                 *[
-                    nn.Sequential(
-                        GraphSAGELayer(self.n_in, self.n_in, self.nearest_nodes, self.n_heads, self.n_heads, self.device, use_out_fc=False, use_multihead_fc=False),
-                        Swish(),
-                        TemporalHistoryLayer(self.n_in, self.n_in, self.interval),
-                        Swish()
-                    ) for i in range(self.n_layers - 1)
+                    FElayer(self.n_in, self.n_in, self.nearest_nodes, self.n_heads, self.device, self.interval, parallel=parallel, in_heads=self.n_heads)
+                    # nn.Sequential(
+                    #     GraphSAGELayer(self.n_in, self.n_in, self.nearest_nodes, self.n_heads, self.n_heads, self.device, use_out_fc=False, use_multihead_fc=False),
+                    #     Swish(),
+                    #     TemporalHistoryLayer(self.n_in, self.n_in, self.interval),
+                    #     Swish()
+                    # ) 
+                    for i in range(self.n_layers - 1)
                 ]
             )
         
@@ -290,7 +293,7 @@ class GraphSAGEExtrapolation(nn.Module):
         return torch.cat([x, y], dim=1)
     
 class FElayer(nn.Module):
-    def __init__(self, in_features, out_features, nearest_nodes, n_heads, device, interval, parallel=True):
+    def __init__(self, in_features, out_features, nearest_nodes, n_heads, device, interval, parallel=True, in_heads=1):
         super(FElayer, self).__init__()
         self.nearest_nodes = nearest_nodes
         self.n_heads = n_heads
@@ -300,10 +303,10 @@ class FElayer(nn.Module):
         self.swish2 = Swish()
         self.parallel = parallel
         if self.parallel:
-            self.graph_sage = GraphSAGELayer(in_features, out_features, self.nearest_nodes, self.n_heads, 1, self.device, use_out_fc=True)
+            self.graph_sage = GraphSAGELayer(in_features, out_features, self.nearest_nodes, self.n_heads, in_heads, self.device, use_out_fc=True)
             self.temporal_hist = TemporalHistoryLayer(in_features, out_features * n_heads, interval)
         else:
-            self.graph_sage = GraphSAGELayer(in_features, out_features, self.nearest_nodes, self.n_heads, 1, self.device, use_out_fc=True)
+            self.graph_sage = GraphSAGELayer(in_features, out_features, self.nearest_nodes, self.n_heads, in_heads, self.device, use_out_fc=True)
             self.temporal_hist = TemporalHistoryLayer(out_features, out_features, interval)
     def forward(self, x):
         '''
@@ -327,31 +330,59 @@ class FElayer(nn.Module):
         return features
     
 class FeatureExtractor(nn.Module):
-    '''
-    extract temporal and spatial features, then concat / add
-    '''
-    def __init__(self, in_features, out_features, nearest_nodes, n_heads, device, interval):
+    def __init__(self, in_features, out_features, nearest_nodes, n_heads, device, interval, parallel=True, n_layers=2):
         super(FeatureExtractor, self).__init__()
         self.nearest_nodes = nearest_nodes
         self.n_heads = n_heads
         self.device = device
-        self.graph_sage = GraphSAGELayer(in_features, out_features, self.nearest_nodes, self.n_heads, 1, self.device, use_out_fc=True)
-        # self.temporal_hist = TemporalHistoryLayer(in_features, out_features, interval)
-        self.temporal_hist = TemporalHistoryLayer(out_features, out_features, interval)
-        self.swish1 = Swish()
-        self.swish2 = Swish()
+        self.n_layers = n_layers
+        # self.parallel = parallel
+        self.input_layer = FElayer(in_features, out_features, self.nearest_nodes, self.n_heads, self.device, interval, parallel=parallel)
+        if self.n_layers > 1:
+            self.fe_layers = nn.Sequential(
+                *[
+                    FElayer(in_features, out_features, self.nearest_nodes, self.n_heads, self.device, interval, parallel=parallel)
+                    for i in range(self.n_layers - 1)
+                ]
+            )
 
     def forward(self, x):
-        # x: (batch_size, num_nodes, in_features)
-        # adj: (batch_size, num_nodes, num_nodes)
+        '''
+        input: embedded signals or signals itself
+        output: concatenate of spatial and temporal features
+        '''
         B, T, N, C = x.size()
-        # Extract spatial features
-        spatial_features = self.graph_sage(x)  # (batch_size, num_nodes, n_heads, out_features)
-        spatial_features = self.swish1(spatial_features)
-        features = self.temporal_hist(spatial_features)
-        features = self.swish2(features)
-        return features # temporal_features
-        # Extract temporal features
-        # temporal_features = self.temporal_hist(x).unsqueeze(-2)# .reshape(B, T, N, self.n_heads, -1)  # (batch_size, num_nodes, n_heads, out_features)
+        features = self.input_layer(x) # in (B, T, N, h, C_out)
+        if self.n_layers > 1:
+            features = self.fe_layers(features)
+        return features
+    
+# class FeatureExtractor(nn.Module):
+#     '''
+#     extract temporal and spatial features, then concat / add
+#     '''
+#     def __init__(self, in_features, out_features, nearest_nodes, n_heads, device, interval):
+#         super(FeatureExtractor, self).__init__()
+#         self.nearest_nodes = nearest_nodes
+#         self.n_heads = n_heads
+#         self.device = device
+#         self.graph_sage = GraphSAGELayer(in_features, out_features, self.nearest_nodes, self.n_heads, 1, self.device, use_out_fc=True)
+#         # self.temporal_hist = TemporalHistoryLayer(in_features, out_features, interval)
+#         self.temporal_hist = TemporalHistoryLayer(out_features, out_features, interval)
+#         self.swish1 = Swish()
+#         self.swish2 = Swish()
 
-        # return spatial_features + temporal_features  # Combine spatial and temporal features
+#     def forward(self, x):
+#         # x: (batch_size, num_nodes, in_features)
+#         # adj: (batch_size, num_nodes, num_nodes)
+#         B, T, N, C = x.size()
+#         # Extract spatial features
+#         spatial_features = self.graph_sage(x)  # (batch_size, num_nodes, n_heads, out_features)
+#         spatial_features = self.swish1(spatial_features)
+#         features = self.temporal_hist(spatial_features)
+#         features = self.swish2(features)
+#         return features # temporal_features
+#         # Extract temporal features
+#         # temporal_features = self.temporal_hist(x).unsqueeze(-2)# .reshape(B, T, N, self.n_heads, -1)  # (batch_size, num_nodes, n_heads, out_features)
+
+#         # return spatial_features + temporal_features  # Combine spatial and temporal features
