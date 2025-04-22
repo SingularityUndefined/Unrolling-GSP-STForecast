@@ -58,6 +58,10 @@ parser.add_argument('--epochs', help='running epochs', default=70, type=int)
 # log settings
 parser.add_argument('--loggrad', help='log gradient norms', default=20, type=int) # -1 stand for no log, 0 for log all, >0 for log every n iterations
 
+parser.add_argument('--tout', help='t_out', default=config['model']['t_out'], type=int)
+parser.add_argument('--trunc', dest='trunc', action='store_true')
+parser.set_defaults(trunc=False)
+
 args = parser.parse_args()
 
 config['model']['kNN'] = args.neighbors
@@ -65,6 +69,7 @@ config['model']['interval'] = args.interval
 config['model']['sharedM'] = args.sharedM
 config['model']['sharedQ'] = args.sharedQ
 config['model']['diff_interval'] = args.diff_interval
+# config['model']['t_out'] = args.tout
 
 # seed, device, training settings
 seed_everything(args.seed)
@@ -124,6 +129,14 @@ ADMM_iters = config['model']['num_layers']
 
 experiment_name = f"{dataset_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f"
 
+if args.trunc:
+    experiment_name = 'trunc_' + experiment_name
+    # config['model']['use_extrapolation'] = False
+
+if args.tout != config['model']['t_out']:
+    experiment_name = f'{args.tout}out_' + experiment_name
+    config['model']['t_out'] = args.tout
+
 if args.ablation != 'None':
     experiment_name = f'wo_{args.ablation}' + experiment_name
 if not config['model']['use_extrapolation']:
@@ -157,7 +170,7 @@ stride = config['data_stride']
 return_time = True
 
 # load data
-train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=config['model']['use_one_channel']) # use one channel
+train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=config['model']['use_one_channel'], truncated=args.trunc) # use one channel
 signal_channels = train_set.signal_channel
 
 # if args.use_one_channel:

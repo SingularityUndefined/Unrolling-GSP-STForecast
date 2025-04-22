@@ -62,7 +62,7 @@ class ADMMBlock(nn.Module):
         if self.ablation != 'DGLR':
             self.rho_d = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_d_init, requires_grad=True)
         # CGD params, emperical initialized
-        alpha_init = 0.2
+        alpha_init = 0.08
         self.alpha_x_init = alpha_init
         self.alpha_zu_init = alpha_init
         self.alpha_zd_init = alpha_init
@@ -203,6 +203,20 @@ class ADMMBlock(nn.Module):
         y = self.apply_op_Ldr_T(y)
         return y # x[T] = x[T]
     
+    def apply_op_Ln(self, x):
+        # undirected time
+        B, T = x.size(0), x.size(1)
+        in_features = self.d_ew.unsqueeze(-1) * x[:,self.temp_indice.view(-1)].reshape(B, T-1, self.interval, self.n_nodes, -1, self.n_channels)
+
+        out_features = self.d_ew.unsqueeze(-1) * x[:,1:].unsqueeze(2)
+        out_features = torch.stack([out_features.diagonal(offset=-offset, dim1=1, dim2=2).sum(-1) for offset in range(0, T-1)], dim=1)
+
+        y = x.clone()
+        y[:,1:] = y[:,1:] - in_features.sum(2)
+        y[:,:-1] = y[:,:-1] - out_features
+        return y
+
+    
     def CG_solver(self, LHS_func, RHS:torch.Tensor, x0:torch.Tensor, ADMM_iters, alpha, beta, args=None):
         '''
         Using Conjugated Gradient Method to solve linear euqations LHS_func(x) = RHS (dim=n_nodes, on n_heads graphs with n_channel signals)
@@ -238,12 +252,12 @@ class ADMMBlock(nn.Module):
     def LHS_x(self, x, y, iters):
         HtHx = x.clone()
         HtHx[:,y.size(1):] = torch.zeros_like(x[:,y.size(1):])
-        if self.ablation == 'DGTV':
+        if self.ablation == 'DGTV' or 'UT':
             output = HtHx + (self.rho_u[iters] + self.rho_d[iters]) / 2 * x
         elif self.ablation == 'None':
             output = HtHx + (self.rho_u[iters] + self.rho_d[iters]) / 2 * x + self.rho[iters] / 2 * self.apply_op_cLdr(x)
-        elif self.ablation == 'UT':
-            pass # TODO
+        # elif self.ablation == 'UT':
+        #     output = HtHx + (self.rho_u[iters] + self.rho_d[iters]) / 2 * x
         elif self.ablation == 'DGLR':
             output = HtHx + self.rho[iters] / 2 * self.apply_op_cLdr(x) + self.rho_u[iters] / 2 * x
         return output
@@ -252,7 +266,10 @@ class ADMMBlock(nn.Module):
         return self.mu_u[iters] * self.apply_op_Lu(zu) + self.rho_u[iters] / 2 * zu
     
     def LHS_zd(self, zd, iters):
-        return self.mu_d2[iters] * self.apply_op_cLdr(zd) + self.rho_d[iters] / 2 * zd
+        if self.ablation == 'UT':
+            return self.mu_d1[iters] * self.apply_op_Ln(zd) + self.rho_d[iters] / 2 * zd
+        else:
+            return self.mu_d2[iters] * self.apply_op_cLdr(zd) + self.rho_d[iters] / 2 * zd
     
     def soft_threshold(self, phi, lambda_):
         '''
@@ -384,12 +401,12 @@ class ADMMBlock(nn.Module):
                 assert not torch.isinf(x).any() and not torch.isinf(x).any(), f'x has inf value in loop {i}'
             else:
                 # print(torch.isnan(gamma + self.rho[i] * phi).any(), torch.isnan(gamma).any(), )
-                if self.ablation == 'DGTV':
+                if self.ablation == 'DGTV' or 'UT':
                     RHS_x = (self.rho_u[i] * zu + self.rho_d[i] * zd) / 2 - (gamma_u + gamma_d) / 2 + Hty
                 elif self.ablation == 'None':
                     RHS_x = self.apply_op_Ldr_T(gamma + self.rho[i] * phi) / 2 + (self.rho_u[i] * zu + self.rho_d[i] * zd) / 2 - (gamma_u + gamma_d) / 2 + Hty
-                elif self.ablation == 'UT':
-                    pass
+                # elif self.ablation == 'UT':
+                #     pass
                 elif self.ablation == 'DGLR':
                     RHS_x = self.apply_op_Ldr_T(gamma + self.rho[i] * phi) / 2 + self.rho_u[i] * zu / 2 - gamma_u / 2 + Hty
                 # print(torch.isnan(zu).any(), torch.isnan(zd).any())
