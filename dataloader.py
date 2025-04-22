@@ -54,7 +54,7 @@ def physical_graph(df, sensor_dict=None):
 
 
 class TrafficDataset(Dataset):
-    def __init__(self, data_folder, graph_csv, data_file, T, t, stride, split='train', n_nodes=None, id_file=None, return_time=False, use_one_channel=False): # , use_one_channel=False) -> None:
+    def __init__(self, data_folder, graph_csv, data_file, T, t, stride, split='train', n_nodes=None, id_file=None, return_time=False, use_one_channel=False, truncated=False): # , use_one_channel=False) -> None:
         '''
         train:val:test = 6:2:2
         Components:
@@ -70,6 +70,7 @@ class TrafficDataset(Dataset):
         self.T = T
         self.t = t
         self.stride = stride
+        self.truncated = truncated
         self.return_time = return_time
         data = np.load(os.path.join(data_folder, data_file))['data'] # (T, n_in)
         self.use_one_channel = use_one_channel
@@ -80,6 +81,10 @@ class TrafficDataset(Dataset):
         # print('datashape', data.shape, data[0:2])
         self.signal_channel = data.shape[-1]
         data_len = data.shape[0]
+        if truncated:
+            data_len = data_len // self.stride
+            self.stride = 1
+            
         # print('dat_len', data_len)
         assert split in ['train', 'val', 'test'], 'split should in train, val or test'
         if split == 'train':
