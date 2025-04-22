@@ -8,7 +8,7 @@ class GraphLearningModule(nn.Module):
     '''
     learning the directed and undirected weights from features
     '''
-    def __init__(self, T, n_nodes, connect_list, nearest_nodes, n_heads, interval, device, n_channels=None, sigma=6, Q1_init=1.2, M_init=2, sharedM=True, sharedQ=True, diff_interval=True) -> None:
+    def __init__(self, T, n_nodes, connect_list, nearest_nodes, n_heads, interval, device, n_channels=None, sigma=6, Q1_init=1.2, M_init=2, sharedM=True, sharedQ=True, diff_interval=True, directed_time=True) -> None:
         '''
         Args:
             u_edges (torch.Tensor) in (n_edges, 2) # nodes regularized
@@ -16,6 +16,7 @@ class GraphLearningModule(nn.Module):
         We construct d_edges by hand with n_nodes
         '''
         super().__init__()
+        self.directed_time = directed_time
         self.T = T
         self.n_nodes = n_nodes
         self.device = device
@@ -228,15 +229,32 @@ class GraphLearningModule(nn.Module):
 
         # mask
         mask = torch.ones(T-1, self.interval).tril_(diagonal=0).unsqueeze(0).unsqueeze(3).unsqueeze(4).repeat(B, 1, 1, self.n_nodes, self.n_heads).to(self.device)
-        # mask = torch.ones(T, self.interval).tril_(diagonal=-1).unsqueeze(0).unsqueeze(3).unsqueeze(4).repeat(B, 1, 1, self.n_nodes, self.n_heads).to(self.device) # in (B, T, interval, N, n_heads)
+        # mask = torch.ones(T, self.interval).tril_(diagonal=-1).unsqueeze(0).unsqueeze(3).unsqueeze(4).repeat(B, 1, 1, self.n_nodes, self.n_heads).to(self.device) # in (B, T-1, interval, N, n_heads)
         weights = weights * mask
         # print('weights before normalization', weights.shape, weights[mask_bool].max(), weights[mask_bool].min(), torch.isnan(weights).any())
 
         # # normalization
+        if self.directed_time:
+            in_degree = weights.sum(2, keepdim=True) # in (B, T-1, interval, N, n_heads)
+            inv_in_degree = torch.where(in_degree > 0, torch.ones((1,), device=self.device) / in_degree, torch.zeros((1,), device=self.device))
+            weights = weights * inv_in_degree # in (B, T, interval, N, n_head)
+        
+        else:
+            # normalize according to  undirected graph
+            in_degree = weights.sum(2) # in (B, T-1, N, n_heads)
+            out_degree = torch.stack([weights.diagonal(offset=-offset, dim1=1, dim2=2).sum(-1) for offset in range(T-1)], dim=1) # in (B, T-1, N, n_heads)
+            pad_degree = torch.zeros_like(in_degree[:,0:1], device=self.device) # in (B, 1, N, n_heads)
+            degree = torch.cat((pad_degree, in_degree), dim=1) + torch.cat((out_degree, pad_degree), dim=1) # in (B, T, N, n_heads)
 
-        in_degree = weights.sum(2, keepdim=True) # in (B, T, interval, N, n_heads)
-        inv_in_degree = torch.where(in_degree > 0, torch.ones((1,), device=self.device) / in_degree, torch.zeros((1,), device=self.device))
-        weights = weights * inv_in_degree # in (B, T, interval, N, n_head)
+            degree_i = degree[:,1:].unsqueeze(2) # in (B, T-1, 1, N, n_heads)
+            degree_j = degree[:,self.temp_indice.view(-1)].view(B, T-1, self.interval, self.n_nodes, -1, self.n_heads) # in (B, T-1, interval, N, n_heads)
+            degree_multiply = degree_i * degree_j # in (B, T-1, interval, N, n_heads)
+            inv_degree_multiply = torch.where(degree_multiply > 0, torch.ones((1,), device=self.device) / degree_multiply, torch.zeros((1,), device=self.device))
+            weights = weights * torch.sqrt(inv_degree_multiply)
+
+
+            # degree = torch.cat((degree, pad_degree), dim=1) # in (B, T, N, n_heads)
+
         # or
        #  weights = weights / (weights.sum(2, keepdim=True) + 1e-8) # in (B, T, interval, N, n_heads)
 
@@ -285,41 +303,7 @@ class GraphLearningModule(nn.Module):
     #     weights = weights * inv_in_degree.unsqueeze(3)
     #     # print(weights.max(), weights.min(), torch.isnan(weights).any())
     #     return weights
-    
 
-    ############################### TODO MODIFIED HERE #####################################
-    def undirected_temporal_graph_from_features(self, features):
-        # we need to construct symmetric weights from the cross-frame features
-        B, T = features.size(0), features.size(1)
-        # pad features
-        pad_features = torch.zeros_like(features[:,:,0], device=self.device).unsqueeze(2)
-        pad_features = torch.cat((features, pad_features), dim=2)
-        # same connection as directed graph, compute with one direction first
-        feature_i = pad_features[:,:-1, self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads, self.n_channels) # in (B, T-1, N, k, n_heads, n_channels)
-        feature_j = features[:,1:] # in (B, T-1, N, n_heads, n_channels)
-        
-        # print('feature_i, feature_j', feature_i.shape, feature_j.shape)
-        df = feature_i - feature_j.unsqueeze(3) # in (B, T-1, N, k, n_heads, n_channels)
-        Mdf = torch.einsum('hij, btnhj -> btnhi', self.multiN, df)
-        weights = torch.exp(- (Mdf ** 2).sum(-1)) # in (B, T-1, N, k, heads)
-        # mask weights
-        mask = (self.nearest_nodes == -1).unsqueeze(0).unsqueeze(1).unsqueeze(4).repeat(B, T-1, 1, 1, self.n_heads)
-        weights = weights * (~mask)
-        # normalize weights
-        in_degree = weights.sum(3) # in (B, T-1, N, n_heads) # T = [1:]
-        # TODO: compute all the out degrees with the weights. I think we need to find the out list of each node
-        # out_list: still in a tensor (N, k)
-        out_degree = torch.zeros((B, T-1, self.n_nodes, self.n_heads), device=self.device) # T = [:-1]
-        for i in range(self.n_nodes):
-            out_mask = (self.nearest_nodes == i) # move this mask to outside?
-            out_degree[:,:,i] = weights[:,:,i,out_mask].sum(2)
-        pass
-        # degree_j = in_degree[:,:,self.nearest_nodes.view(-1)].view(B, T-1, self.n_nodes, -1, self.n_heads)
-        # degree_multiply = torch.sqrt(in_degree.unsqueeze(3) * degree_j)
-        # inv_degree_multiply = torch.where(degree_multiply > 0, torch.ones((1,), device=self.device) / degree_multiply, torch.zeros((1,), device=self.device))
-        # inv_degree_multiply = torch.where(inv_degree_multiply == torch.inf, 0, inv_degree_multiply)
-        # weights = weights * inv_degree_multiply.unsqueeze(3)
-        # return weights
 ####################################
     def forward(self, features=None):
         '''
