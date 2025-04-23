@@ -97,6 +97,11 @@ class UnrollingModel(nn.Module):
         self.skip_connection_weights = Parameter(torch.ones((num_blocks,), device=self.device) * 0.95, requires_grad=True)
 
         # spatiotemporal embeddings
+
+        directed_time_graph = True
+
+        if self.ablation == 'UT':
+            directed_time_graph = False
         
 
         for i in range(self.num_blocks):
@@ -152,7 +157,8 @@ class UnrollingModel(nn.Module):
                         n_channels=feature_channels,
                         sharedM=sharedM,
                         sharedQ=sharedQ,
-                        diff_interval=diff_interval
+                        diff_interval=diff_interval,
+                        directed_time=directed_time_graph,
                     )
                 }
             ))

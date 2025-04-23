@@ -242,7 +242,7 @@ class TemporalHistoryLayer(nn.Module):
         return output
     
 class GraphSAGEExtrapolation(nn.Module):
-    def __init__(self, n_nodes, t_in, T, nearest_nodes, n_in, n_heads, device, interval, n_layers=2, parallel=True): # TODO: PARALLEL = FALSE
+    def __init__(self, n_nodes, t_in, T, nearest_nodes, n_in, n_heads, device, interval, n_layers=2, parallel=False): # TODO: PARALLEL = FALSE
         super().__init__()
         self.device = device
         self.n_heads = n_heads

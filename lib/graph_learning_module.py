@@ -247,7 +247,8 @@ class GraphLearningModule(nn.Module):
             degree = torch.cat((pad_degree, in_degree), dim=1) + torch.cat((out_degree, pad_degree), dim=1) # in (B, T, N, n_heads)
 
             degree_i = degree[:,1:].unsqueeze(2) # in (B, T-1, 1, N, n_heads)
-            degree_j = degree[:,self.temp_indice.view(-1)].view(B, T-1, self.interval, self.n_nodes, -1, self.n_heads) # in (B, T-1, interval, N, n_heads)
+            degree_j = degree[:,self.temp_indice.view(-1)].view(B, T-1, self.interval, self.n_nodes, self.n_heads) # in (B, T-1, interval, N, n_heads)
+            # print(degree_i.shape, degree_j.shape)
             degree_multiply = degree_i * degree_j # in (B, T-1, interval, N, n_heads)
             inv_degree_multiply = torch.where(degree_multiply > 0, torch.ones((1,), device=self.device) / degree_multiply, torch.zeros((1,), device=self.device))
             weights = weights * torch.sqrt(inv_degree_multiply)

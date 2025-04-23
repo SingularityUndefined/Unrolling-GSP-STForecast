@@ -252,7 +252,7 @@ class ADMMBlock(nn.Module):
     def LHS_x(self, x, y, iters):
         HtHx = x.clone()
         HtHx[:,y.size(1):] = torch.zeros_like(x[:,y.size(1):])
-        if self.ablation == 'DGTV' or 'UT':
+        if self.ablation in ['DGTV', 'UT']:
             output = HtHx + (self.rho_u[iters] + self.rho_d[iters]) / 2 * x
         elif self.ablation == 'None':
             output = HtHx + (self.rho_u[iters] + self.rho_d[iters]) / 2 * x + self.rho[iters] / 2 * self.apply_op_cLdr(x)
@@ -267,7 +267,7 @@ class ADMMBlock(nn.Module):
     
     def LHS_zd(self, zd, iters):
         if self.ablation == 'UT':
-            return self.mu_d1[iters] * self.apply_op_Ln(zd) + self.rho_d[iters] / 2 * zd
+            return self.mu_d2[iters] * self.apply_op_Ln(zd) + self.rho_d[iters] / 2 * zd
         else:
             return self.mu_d2[iters] * self.apply_op_cLdr(zd) + self.rho_d[iters] / 2 * zd
     
@@ -401,7 +401,7 @@ class ADMMBlock(nn.Module):
                 assert not torch.isinf(x).any() and not torch.isinf(x).any(), f'x has inf value in loop {i}'
             else:
                 # print(torch.isnan(gamma + self.rho[i] * phi).any(), torch.isnan(gamma).any(), )
-                if self.ablation == 'DGTV' or 'UT':
+                if self.ablation in ['DGTV', 'UT']:
                     RHS_x = (self.rho_u[i] * zu + self.rho_d[i] * zd) / 2 - (gamma_u + gamma_d) / 2 + Hty
                 elif self.ablation == 'None':
                     RHS_x = self.apply_op_Ldr_T(gamma + self.rho[i] * phi) / 2 + (self.rho_u[i] * zu + self.rho_d[i] * zd) / 2 - (gamma_u + gamma_d) / 2 + Hty

@@ -138,7 +138,7 @@ if args.tout != config['model']['t_out']:
     config['model']['t_out'] = args.tout
 
 if args.ablation != 'None':
-    experiment_name = f'wo_{args.ablation}' + experiment_name
+    experiment_name = f'wo_{args.ablation}_' + experiment_name
 if not config['model']['use_extrapolation']:
     experiment_name = 'LR_' + experiment_name
 
