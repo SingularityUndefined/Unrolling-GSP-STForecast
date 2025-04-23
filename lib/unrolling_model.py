@@ -49,7 +49,8 @@ class UnrollingModel(nn.Module):
                  use_one_channel=False,
                  sharedM=False,
                  sharedQ=True,
-                 diff_interval=True
+                 diff_interval=True,
+                 predict_only=False,
                  ):
         super().__init__()
         self.num_blocks = num_blocks
@@ -60,6 +61,7 @@ class UnrollingModel(nn.Module):
         self.use_norm = use_norm
         self.ablation = ablation
         self.use_one_channel = use_one_channel
+        self.predict_only = predict_only
 
         # define a graph connection pattern
         self.kNN = None
@@ -329,6 +331,12 @@ class UnrollingModel(nn.Module):
             assert not torch.isnan(self.skip_connection_weights).any(), f'skip connection has NaN Values in block {i}'
             output = p * output_new + (1-p) * output_old
             # print(f'output after block {i}: {output.size()}')
+            if self.predict_only:
+                # concat original signals to replace the outputs
+                if self.use_one_channel:
+                    output[:,:self.t_in] = y[...,0:1]
+                else:
+                    output[:,:self.t_in] = y
 
         if self.use_norm:
             output = layer_recovery_on_data(output, self.norm_shape, mean, std)

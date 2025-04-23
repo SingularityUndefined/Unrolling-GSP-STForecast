@@ -62,6 +62,9 @@ parser.add_argument('--tout', help='t_out', default=config['model']['t_out'], ty
 parser.add_argument('--trunc', dest='trunc', action='store_true')
 parser.set_defaults(trunc=False)
 
+parser.add_argument('--predonly', dest='pred_only', action='store_true')
+parser.set_defaults(pred_only=False)
+
 args = parser.parse_args()
 
 config['model']['kNN'] = args.neighbors
@@ -129,6 +132,9 @@ ADMM_iters = config['model']['num_layers']
 
 experiment_name = f"{dataset_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f"
 
+if args.pred_only:
+    experiment_name = 'predOnly_' + experiment_name
+    # config['model']['use_extrapolation'] = False
 if args.trunc:
     experiment_name = 'trunc_' + experiment_name
     # config['model']['use_extrapolation'] = False
@@ -204,7 +210,7 @@ model_pretrained_path = None
 
 
 print('args.ablation', args.ablation)
-model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, interval, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, st_emb_info=config['st_emb_info'], use_extrapolation=config['model']['use_extrapolation'], extrapolation_agg_layers=args.FElayers, use_one_channel=config['model']['use_one_channel'], sharedM=config['model']['sharedM'], sharedQ=config['model']['sharedQ'], diff_interval=config['model']['diff_interval']).to(device)
+model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, interval, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, st_emb_info=config['st_emb_info'], use_extrapolation=config['model']['use_extrapolation'], extrapolation_agg_layers=args.FElayers, use_one_channel=config['model']['use_one_channel'], sharedM=config['model']['sharedM'], sharedQ=config['model']['sharedQ'], diff_interval=config['model']['diff_interval'], predict_only=args.pred_only).to(device)
 # 'UnrollingForecasting/MainExperiments/models/v2/PEMS04/direct_4b_4h_6f/val_15.pth'
 
 if model_pretrained_path is not None:
