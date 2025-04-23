@@ -8,7 +8,7 @@ class GraphLearningModule(nn.Module):
     '''
     learning the directed and undirected weights from features
     '''
-    def __init__(self, T, n_nodes, connect_list, nearest_nodes, n_heads, interval, device, n_channels=None, sigma=6, Q1_init=1.2, M_init=2, sharedM=True, sharedQ=True, diff_interval=True, directed_time=True) -> None:
+    def __init__(self, T, n_nodes, connect_list, nearest_nodes, n_heads, interval, device, n_channels=None, sigma=6, Q1_init=1.2, M_init=2, sharedM=True, sharedQ=True, diff_interval=True, directed_time=True, use_m_disp=True) -> None:
         '''
         Args:
             u_edges (torch.Tensor) in (n_edges, 2) # nodes regularized
@@ -17,6 +17,7 @@ class GraphLearningModule(nn.Module):
         '''
         super().__init__()
         self.directed_time = directed_time
+        self.use_m_disp = use_m_disp
         self.T = T
         self.n_nodes = n_nodes
         self.device = device
@@ -206,26 +207,46 @@ class GraphLearningModule(nn.Module):
         features_i = features[:,self.temp_indice.view(-1)].view(B, T-1, self.interval, self.n_nodes, -1, self.n_channels) # in (B, T - 1, interval, N, n_heads, n_channels)
         df = features_i - features_j.unsqueeze(2)
         # multiply with Qs
-        if self.sharedQ:
-            if self.diff_interval:
-                Q_df = torch.einsum('vhij, btvnhj -> btvnhi', self.multiQ, df) # in (B, T-1, interval, N, n_heads, n_channels)
-            # Q_j = torch.einsum('hij, btnhj -> btnhi', self.multiQ, features_j)
+
+        if self.use_m_disp:
+            if self.sharedQ:
+                if self.diff_interval:
+                    Q_df = torch.einsum('vhij, btvnhj -> btvnhi', self.multiQ, df) # in (B, T-1, interval, N, n_heads, n_channels)
+                # Q_j = torch.einsum('hij, btnhj -> btnhi', self.multiQ, features_j)
+                else:
+                    Q_df = torch.einsum('hij, btvnhj -> btvnhi', self.multiQ, df)
             else:
-                Q_df = torch.einsum('hij, btvnhj -> btvnhi', self.multiQ, df)
-        else:
-            if self.diff_interval:
+                if self.diff_interval:
+                    # Q_j = torch.einsum('thij, btnhj -> btnhi', self.multiQ, features_j)
+                    Q_df = torch.einsum('tvhij, btvnhj -> btvnhi', self.multiQ, df)
                 # Q_j = torch.einsum('thij, btnhj -> btnhi', self.multiQ, features_j)
-                Q_df = torch.einsum('tvhij, btvnhj -> btvnhi', self.multiQ, df)
-            # Q_j = torch.einsum('thij, btnhj -> btnhi', self.multiQ, features_j)
+                else:
+                    Q_df = torch.einsum('thij, btvnhj -> btvnhi', self.multiQ, df)
+            # assertation
+            assert not torch.isnan(Q_df).any(), f'Q_j has NaN value: Q in ({self.multiQ.max().item():.4f}, {self.multiQ.min().item():.4f}; features in ({features.max().item()}, {features.min().item()}))'
+            # assert not torch.isnan(Q_i).any(), f'Q_i has NaN value: Q1 in ({self.multiQ1.max().item():.4f}, {self.multiQ1.min().item():.4f}, features in ({features.max()}, {features.min()})'
+            # multiply two qs
+            d = Q_df ** 2 # Q_df * df # in (B, T, interval, N, n_heads, n_channels)
+            # print('deplacement', d.max(), d.min(), torch.isnan(d).any())
+            weights = torch.exp(-d).sum(-1) # in (B, T, interval, N, n_heads)
+        
+        else:
+            if self.sharedQ:
+                if self.diff_interval:
+                    Q_i = torch.einsum('vhij, btvnhj -> btvnhi', self.multiQ, features_i)
+                else:
+                    Q_i = torch.einsum('hij, btnvhj -> btvnhi', self.multiQ, features_i)
             else:
-                Q_df = torch.einsum('thij, btvnhj -> btvnhi', self.multiQ, df)
-        # assertation
-        assert not torch.isnan(Q_df).any(), f'Q_j has NaN value: Q in ({self.multiQ.max().item():.4f}, {self.multiQ.min().item():.4f}; features in ({features.max().item()}, {features.min().item()}))'
-        # assert not torch.isnan(Q_i).any(), f'Q_i has NaN value: Q1 in ({self.multiQ1.max().item():.4f}, {self.multiQ1.min().item():.4f}, features in ({features.max()}, {features.min()})'
-        # multiply two qs
-        d = Q_df ** 2 # Q_df * df # in (B, T, interval, N, n_heads, n_channels)
-        # print('deplacement', d.max(), d.min(), torch.isnan(d).any())
-        weights = torch.exp(-d).sum(-1) # in (B, T, interval, N, n_heads)
+                if self.diff_interval:
+                    Q_i = torch.einsum('tvhij, btvnhj -> btvnhi', self.multiQ, features_i)
+                else:
+                    Q_i = torch.einsum('thij, btnvhj -> btnvhi', self.multiQ, features_i)
+            # assertation
+            assert not torch.isnan(Q_i).any(), f'Q_i has NaN value: Q2 in ({self.multiQ.max().item():.4f}, {self.multiQ.min().item():.4f}; features in ({features_i.max().item()}, {features_i.min().item()}))'
+            # assert not torch.isnan(Q_i).any(), f'Q_i has NaN value: Q1 in ({self.multiQ1.max().item():.4f}, {self.multiQ1.min().item():.4f}, features in ({features.max()}, {features.min()})'
+            # multiply two qs
+            d = Q_i * features_j.unsqueeze(2) # Q_df * df # in (B, T, interval, N, n_heads, n_channels)
+            weights = torch.exp(-d).sum(-1) # in (B, T, interval, N, n_heads)
 
         # mask
         mask = torch.ones(T-1, self.interval).tril_(diagonal=0).unsqueeze(0).unsqueeze(3).unsqueeze(4).repeat(B, 1, 1, self.n_nodes, self.n_heads).to(self.device)

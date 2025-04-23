@@ -3,7 +3,7 @@ learning_rate: 0.0005
 optim: adam
 weight_decay: 0.01
 clamp: 0.8
-loss_function: Huber
+loss_function: Huber # MSE
 normed_loss: False
 
 data_stride: 3

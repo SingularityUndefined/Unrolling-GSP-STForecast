@@ -56,7 +56,7 @@ parser.set_defaults(diff_interval=config['model']['diff_interval'])
 parser.add_argument('--epochs', help='running epochs', default=70, type=int)
 
 # log settings
-parser.add_argument('--loggrad', help='log gradient norms', default=20, type=int) # -1 stand for no log, 0 for log all, >0 for log every n iterations
+parser.add_argument('--loggrad', help='log gradient norms', default=-1, type=int) # -1 stand for no log, 0 for log all, >0 for log every n iterations
 
 parser.add_argument('--tout', help='t_out', default=config['model']['t_out'], type=int)
 parser.add_argument('--trunc', dest='trunc', action='store_true')
