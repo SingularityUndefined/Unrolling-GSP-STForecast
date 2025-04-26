@@ -8,7 +8,7 @@ class GraphLearningModule(nn.Module):
     '''
     learning the directed and undirected weights from features
     '''
-    def __init__(self, T, n_nodes, connect_list, nearest_nodes, n_heads, interval, device, n_channels=None, sigma=6, Q1_init=1.2, M_init=2, sharedM=True, sharedQ=True, diff_interval=True, directed_time=True, use_m_disp=True) -> None:
+    def __init__(self, T, n_nodes, connect_list, nearest_nodes, n_heads, interval, device, n_channels=None, sigma=6, Q1_init=1.2, M_init=1.5, sharedM=True, sharedQ=True, diff_interval=True, directed_time=True, use_m_disp=True) -> None:
         '''
         Args:
             u_edges (torch.Tensor) in (n_edges, 2) # nodes regularized
@@ -104,10 +104,10 @@ class GraphLearningModule(nn.Module):
 
         degree = weights.sum(3) # in (B, T, N, n_heads)
         degree_j = degree[:,:,self.nearest_nodes[:,1:].reshape(-1)].view(B, T, self.n_nodes, -1, self.n_heads) # in (B, T, N, k, n_heads)
-        degree_multiply = torch.sqrt(degree.unsqueeze(3) * degree_j)
+        degree_multiply = degree.unsqueeze(3) * degree_j
         inv_degree_multiply = torch.where(degree_multiply > 0, torch.ones((1,), device=self.device) / degree_multiply, torch.zeros((1,), device=self.device))
         inv_degree_multiply = torch.where(inv_degree_multiply == torch.inf, 0, inv_degree_multiply)
-        weights = weights * inv_degree_multiply
+        weights = weights * torch.sqrt(inv_degree_multiply)
         # print('undirected_weights', weights.shape)
         return weights # in (B, T, N, k, n_heads)
 

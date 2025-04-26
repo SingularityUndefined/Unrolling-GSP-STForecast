@@ -317,6 +317,13 @@ class UnrollingModel(nn.Module):
             admm_block.u_ew = u_ew
             admm_block.d_ew = d_ew
             try:
+                if self.predict_only:
+                # concat original signals to replace the outputs
+                    if self.use_one_channel:
+                        output[:,:self.t_in] = y[...,0:1]
+                    else:
+                        output[:,:self.t_in] = y
+                        
                 if self.use_one_channel:
                     output_new = admm_block(output[...,0:1], t)
                 else:
@@ -331,12 +338,6 @@ class UnrollingModel(nn.Module):
             assert not torch.isnan(self.skip_connection_weights).any(), f'skip connection has NaN Values in block {i}'
             output = p * output_new + (1-p) * output_old
             # print(f'output after block {i}: {output.size()}')
-            if self.predict_only:
-                # concat original signals to replace the outputs
-                if self.use_one_channel:
-                    output[:,:self.t_in] = y[...,0:1]
-                else:
-                    output[:,:self.t_in] = y
 
         if self.use_norm:
             output = layer_recovery_on_data(output, self.norm_shape, mean, std)

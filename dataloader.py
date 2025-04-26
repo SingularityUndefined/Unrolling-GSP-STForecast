@@ -139,14 +139,33 @@ def directed_physical_graph(adj_mat):
         for j in range(adj_mat.shape[1]):
             if i != j and adj_mat[i, j] > 0: 
                 u_edges.append([i, j]) 
-                u_distance.append(adj_mat[i, j])
+                u_distance.append(-np.log(adj_mat[i, j]))
+    for i in range(adj_mat.shape[0]):
+        adj_mat[i, i] = 0
+    # isolated nodes
+    n_isolated = 0
+    for i in range(adj_mat.shape[0]):
+        if np.sum(adj_mat[i]) == 0:
+            n_isolated += 1
+            if i != 0:
+                u_edges.append([i, i-1])
+                u_edges.append([i-1, i])
+                u_distance.append(1)
+                u_distance.append(1)
+            if i != adj_mat.shape[0] - 1:
+                u_edges.append([i, i+1])
+                u_edges.append([i+1, i])
+                u_distance.append(1)
+                u_distance.append(1)
+    print("n_isolated", n_isolated)
+
     n_edges = len(u_edges)
     u_edges = np.array(u_edges)
     u_distance = np.array(u_distance)
     return n_edges, u_edges, u_distance
 
 class DirectedTrafficDataset(Dataset):
-    def __init__(self, data_folder, adj_mat_file, data_file, T, t, stride, split='train', n_nodes=None, return_time=False) -> None:
+    def __init__(self, data_folder, adj_mat_file, data_file, T, t, stride, split='train', n_nodes=None, return_time=False, use_one_channel=False) -> None:
         '''
         train:val:test = 6:2:2
         Components:
@@ -164,6 +183,8 @@ class DirectedTrafficDataset(Dataset):
         self.stride = stride
         self.return_time = return_time
         data = np.load(os.path.join(data_folder, data_file)) # (T, n_in)
+        self.use_one_channel = use_one_channel
+        # data = np.expand_dims(data[:, :, 0], axis=-1)
 
         # normalization
         # mean, std = data.mean(), data.std()
@@ -186,8 +207,10 @@ class DirectedTrafficDataset(Dataset):
             self.data = data[int(data_len * 0.8):]
         # graph
         self.adj_mat = np.load(os.path.join(data_folder, adj_mat_file))
+        # NOTE: symmetrize
+        self.adj_mat = (self.adj_mat + self.adj_mat.T) / 2
         self.n_nodes = self.adj_mat.shape[0]
-        self.n_edges, self.u_edges, self.u_distance = physical_graph(self.adj_mat)
+        self.n_edges, self.u_edges, self.u_distance = directed_physical_graph(self.adj_mat)
         self.u_edges = torch.Tensor(self.u_edges).type(torch.long)#, dtype=torch.long)
         self.u_distance = torch.Tensor(self.u_distance)
         self.d_edges = torch.cat([self.u_edges, torch.arange(0, self.n_nodes)[:,None] + torch.zeros((2,), dtype=torch.long)], 0)
@@ -205,6 +228,8 @@ class DirectedTrafficDataset(Dataset):
         y = self.data[index * self.stride:index * self.stride + self.t] # in (t, n_nodes, n_channels)
         x = self.data[index * self.stride:index * self.stride + self.T] # in (T, n_nodes, n_channels)
         # model(y) = x
+        if self.use_one_channel:
+            x = x[...,0:1]
         time = torch.arange(0, self.T).type(torch.long) + index * self.stride + self.data_begin
         if self.return_time:
             return torch.Tensor(y), torch.Tensor(x), time

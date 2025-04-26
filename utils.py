@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from dataloader import TrafficDataset
+from dataloader import TrafficDataset, DirectedTrafficDataset
 import os
 import logging
 import matplotlib.pyplot as plt
@@ -35,6 +35,27 @@ def create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, nu
     train_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'train', id_file=id_file, return_time=return_time, use_one_channel=use_one_channel, truncated=truncated)
     val_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'val', id_file=id_file, return_time=return_time, use_one_channel=use_one_channel, truncated=truncated)
     test_set = TrafficDataset(data_folder, graph_csv, data_file, T, t_in, stride, 'test', id_file=id_file, return_time=return_time, use_one_channel=use_one_channel, truncated=truncated)
+
+    train_loader = DataLoader(train_set, batch_size, shuffle=True, num_workers=num_workers)
+    val_loader = DataLoader(val_set, batch_size, shuffle=False, num_workers=num_workers)
+    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+
+    return train_set, val_set, test_set, train_loader, val_loader, test_loader
+
+def create_directed_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=False):
+    data_folder = os.path.join(dataset_dir, dataset_name)
+    
+    assert dataset_name in ['PEMS-BAY', 'METR-LA']
+    if dataset_name == "PEMS-BAY":
+        adj_mat_name = 'pems_adj_mat.npy'
+        data_file_name = 'pems_node_values.npy'
+    else: # dataset_name == "METR-LA"
+        adj_mat_name = 'adj_mat.npy'
+        data_file_name = 'node_values.npy'
+    
+    train_set = DirectedTrafficDataset(data_folder, adj_mat_name, data_file_name, T, t_in, stride, 'train', return_time=return_time, use_one_channel=use_one_channel)
+    val_set = DirectedTrafficDataset(data_folder, adj_mat_name, data_file_name, T, t_in, stride, 'val', return_time=return_time, use_one_channel=use_one_channel)
+    test_set = DirectedTrafficDataset(data_folder, adj_mat_name, data_file_name, T, t_in, stride, 'test', return_time=return_time, use_one_channel=use_one_channel)
 
     train_loader = DataLoader(train_set, batch_size, shuffle=True, num_workers=num_workers)
     val_loader = DataLoader(val_set, batch_size, shuffle=False, num_workers=num_workers)
@@ -182,6 +203,7 @@ def change_model_location(model, model_path, device):
 
 def test(model, val_loader, data_normalization, masked_flag, config, device, signal_channels, mode='test', loss_fn=None, use_one_channel=False):
     model.eval()
+    batch_count = 0
     with torch.no_grad():
         rec_mse = 0
         pred_mse = 0
@@ -197,6 +219,9 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
             running_loss = 0
 
         for y, x, t_list in tqdm(val_loader):
+            # if batch_count < 120:
+            #     batch_count += 1
+            #     continue
             y, x, t_list = y.to(device), x.to(device), t_list.to(device)
 
             # y = (y - train_mean) / train_std
@@ -245,14 +270,26 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
                 pred_mse += ((x - output) ** 2).detach().cpu().mean().item()
                 pred_mae += (torch.abs(output - x)).detach().cpu().mean().item()
                 mask = (x > 1e-8)
-                pred_mape += (torch.abs(output[mask] - x[mask]) / x[mask]).detach().cpu().mean().item() * 100
+                if mask.sum() > 0:
+                    pred_mape += (torch.abs(output[mask] - x[mask]) / x[mask]).detach().cpu().mean().item() * 100
+                    batch_count += 1
             else:
                 x_pred = x[:,config['model']['t_in']:]
                 output_pred = output[:,config['model']['t_in']:]
                 mask = x_pred > 1e-8
                 pred_mse += ((x_pred - output_pred) ** 2).detach().cpu().mean().item()
                 pred_mae += (torch.abs(output_pred - x_pred)).detach().cpu().mean().item()
-                pred_mape += (torch.abs(output_pred[mask] - x_pred[mask]) / x_pred[mask]).detach().cpu().mean().item() * 100
+                if mask.sum() > 0:
+                    pred_mape_inplace = (torch.abs(output_pred[mask] - x_pred[mask]) / x_pred[mask]).detach().cpu()
+                    # print(pred_mape_inplace, batch_count)
+                    assert not pred_mape_inplace.isnan().any(), print(output_pred[mask].isnan().any(), x_pred[mask].isnan().any())
+                    pred_mape += pred_mape_inplace.mean().item() * 100
+                    batch_count += 1
+                
+                # if mask.sum() == 0:
+                #     print(x_pred, output_pred)
+
+                # print('pred_mape', pred_mape)
 
                 if not use_one_channel:
                     pred_mse_d += ((x_pred - output_pred) ** 2).detach().mean((0,1,2)).cpu().numpy()
@@ -265,13 +302,13 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
     rec_rmse = math.sqrt(rec_mse / len(val_loader))
     pred_rmse = math.sqrt(pred_mse / len(val_loader))
     pred_mae = pred_mae / len(val_loader)
-    pred_mape = pred_mape / len(val_loader)
+    pred_mape = pred_mape / batch_count# len(val_loader)
 
     if not use_one_channel:
         rec_rmse_d = np.sqrt(rec_mse_d / len(val_loader))
         pred_mse_d = np.sqrt(pred_mse_d / len(val_loader))
         pred_mae_d = pred_mae_d / len(val_loader)
-        pred_mape_d = pred_mape_d / len(val_loader)
+        pred_mape_d = pred_mape_d / batch_count #len(val_loader)
 
     if mode == 'val':
         running_loss /= len(val_loader)

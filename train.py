@@ -117,9 +117,12 @@ def get_degrees(n_nodes, u_edges:torch.Tensor):
 # hops
 k_hop = config['model']['kNN']
 interval = config['model']['interval']
-dataset_dir = '/home/disk/qij/TS_datasets/PEMS0X_data/'
+dataset_dir = '/home/disk/qij/TS_datasets/'
 if not os.path.exists(dataset_dir):
-    dataset_dir = '../datasets/PEMS0X_data'
+    dataset_dir = '../datasets/'
+
+if 'PEMS0' in args.dataset:
+    dataset_dir = os.path.join(dataset_dir, 'PEMS0X_data')
 
 experiment_dir = f'lr_{learning_rate:.0e}_seed_{args.seed}'
 # experiment_name = f'{k_hop}_hop_{interval}_int_lr_{learning_rate:.0e}_seed{args.seed}'
@@ -176,7 +179,11 @@ stride = config['data_stride']
 return_time = True
 
 # load data
-train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=config['model']['use_one_channel'], truncated=args.trunc) # use one channel
+if 'PEMS0' in args.dataset:
+    train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=config['model']['use_one_channel'], truncated=args.trunc) # use one channel
+
+else:
+    train_set, val_set, test_set, train_loader, val_loader, test_loader = create_directed_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=config['model']['use_one_channel'])
 signal_channels = train_set.signal_channel
 
 # if args.use_one_channel:
