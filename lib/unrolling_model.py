@@ -239,24 +239,28 @@ class UnrollingModel(nn.Module):
 
             if alpha_max is not None:
                 admm_block.alpha_x.data = torch.clamp(admm_block.alpha_x.data, 0.0, alpha_max)
-                admm_block.alpha_zu.data = torch.clamp(admm_block.alpha_zu.data, 0.0, alpha_max)
-                if self.ablation != 'DGLR':
+                if self.ablation != 'simple':
+                    admm_block.alpha_zu.data = torch.clamp(admm_block.alpha_zu.data, 0.0, alpha_max)
+                if self.ablation not in ['DGLR', 'simple']:
                     admm_block.alpha_zd.data = torch.clamp(admm_block.alpha_zd.data, 0.0, alpha_max)
             else:
                 admm_block.alpha_x.data = torch.clamp(admm_block.alpha_x.data, 0.0)
-                admm_block.alpha_zu.data = torch.clamp(admm_block.alpha_zu.data, 0.0)
-                if self.ablation != 'DGLR':
+                if self.ablation != 'simple':
+                    admm_block.alpha_zu.data = torch.clamp(admm_block.alpha_zu.data, 0.0)
+                if self.ablation not in ['DGLR', 'simple']:
                     admm_block.alpha_zd.data = torch.clamp(admm_block.alpha_zd.data, 0.0)
 
             if beta_max is not None:
                 admm_block.beta_x.data = torch.clamp(admm_block.beta_x.data, 0.0, beta_max)
-                admm_block.beta_zu.data = torch.clamp(admm_block.beta_zu.data, 0.0, beta_max)
-                if self.ablation != 'DGLR':
+                if self.ablation != 'simple':
+                    admm_block.beta_zu.data = torch.clamp(admm_block.beta_zu.data, 0.0, beta_max)
+                if self.ablation not in ['DGLR', 'simple']:
                     admm_block.beta_zd.data = torch.clamp(admm_block.beta_zd.data, 0.0, beta_max)
             else:
                 admm_block.beta_x.data = torch.clamp(admm_block.beta_x.data, 0.0)
-                admm_block.beta_zu.data = torch.clamp(admm_block.beta_zu.data, 0.0)
-                if self.ablation != 'DGLR':
+                if self.ablation != 'simple':
+                    admm_block.beta_zu.data = torch.clamp(admm_block.beta_zu.data, 0.0)
+                if self.ablation not in ['DGLR', 'simple']:
                     admm_block.beta_zd.data = torch.clamp(admm_block.beta_zd.data, 0.0)
 
 

@@ -30,7 +30,7 @@ class ADMMBlock(nn.Module):
         self.connect_list = connect_list
         self.nearest_nodes = nearest_nodes.to(torch.int64)
         self.ablation = ablation
-        assert self.ablation in ['None', 'DGLR', 'DGTV', 'UT'], 'ablation should be None, DGLR, DGTV or UT'
+        assert self.ablation in ['None', 'DGLR', 'DGTV', 'UT', 'simple'], 'ablation should be None, DGLR, DGTV or UT'
 
         self.u_ew = None # place holder # dict: i: [B, T, k, n_heads]
         self.d_ew = None # place holder
@@ -44,7 +44,7 @@ class ADMMBlock(nn.Module):
         self.mu_d1_init = ADMM_info['mu_d1_init'] #$ 3
         self.mu_d2_init = ADMM_info['mu_d2_init'] # 3
         self.mu_u = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.mu_u_init, requires_grad=True)
-        if self.ablation in ['None', 'DGLR']:
+        if self.ablation != 'DGTV':
             self.mu_d1 = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.mu_d1_init, requires_grad=True)
         if self.ablation != 'DGLR':
             self.mu_d2 = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.mu_d2_init, requires_grad=True)
@@ -54,12 +54,13 @@ class ADMMBlock(nn.Module):
         self.rho_u_init = math.sqrt(self.n_nodes / self.T)
         self.rho_d_init = math.sqrt(self.n_nodes / self.T)
 
-        if self.ablation in ['None', 'DGLR']:
+        if self.ablation != 'DGTV':
             self.rho = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_init, requires_grad=True)
 
-        self.rho_u = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_u_init, requires_grad=True)
+        if self.ablation != 'simple':
+            self.rho_u = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_u_init, requires_grad=True)
 
-        if self.ablation != 'DGLR':
+        if self.ablation not in ['DGLR', 'simple']:
             self.rho_d = Parameter(torch.ones((self.ADMM_iters,), device=self.device) * self.rho_d_init, requires_grad=True)
         # CGD params, emperical initialized
         alpha_init = 0.08
@@ -69,11 +70,13 @@ class ADMMBlock(nn.Module):
         self.beta_x_init = alpha_init
         self.beta_zu_init = alpha_init
         self.beta_zd_init = alpha_init
+
         self.alpha_x = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.alpha_x_init, requires_grad=True)
         self.beta_x = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.beta_x_init, requires_grad=True)
-        self.alpha_zu = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.alpha_zu_init, requires_grad=True)
-        self.beta_zu = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.beta_zu_init, requires_grad=True)
-        if self.ablation != 'DGLR':
+        if self.ablation != 'simple':
+            self.alpha_zu = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.alpha_zu_init, requires_grad=True)
+            self.beta_zu = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.beta_zu_init, requires_grad=True)
+        if self.ablation not in ['DGLR', 'simple']:
             self.alpha_zd = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.alpha_zd_init, requires_grad=True)
             self.beta_zd = Parameter(torch.ones((self.ADMM_iters, self.CG_iters, self.n_heads, 1), device=self.device) * self.beta_zd_init, requires_grad=True)
 
@@ -229,7 +232,9 @@ class ADMMBlock(nn.Module):
         if args is None:
             r = RHS - LHS_func(x0, ADMM_iters)
         else:
+            # print('RHS', RHS.size(), 'LHS', LHS_func(x0, args, ADMM_iters).size())
             r = RHS - LHS_func(x0, args, ADMM_iters)
+        # print('r', r.size())
         
         p = r.clone() # in (B, T, n_nodes, n_head, n_channels)
         for i in range(self.CG_iters):
@@ -242,11 +247,16 @@ class ADMMBlock(nn.Module):
             r = r - alpha[ADMM_iters, i] * Ap
             p = r + beta[ADMM_iters, i] * p
 
+            # print(x0.size(), Ap.size(), r.size(), p.size())
+            # print('x0', x0.size(), 'Ap', Ap.size(), 'r', r.size(), 'p', p.size())
+
         return x0 #, alpha, beta
     
     def LHS_simple_x(self, x,y, iters): # all in one as Eq. 10
         HtHx = x.clone()
-        HtHx[:,6:] = torch.zeros_like(x[:,y.size(1):])
+        HtHx[:,y.size(1):] = torch.zeros_like(x[:,y.size(1):])
+        # print(HtHx.size(), x.size(), self.apply_op_Lu(x).size())
+        # print(self.mu_u[iters].size(), self.rho[iters].size(),self.mu_d2[iters].size())
         return HtHx + self.mu_u[iters] * self.apply_op_Lu(x) + (self.mu_d2[iters] + self.rho[iters] / 2) * self.apply_op_cLdr(x)
     
     def LHS_x(self, x, y, iters):
@@ -361,7 +371,7 @@ class ADMMBlock(nn.Module):
     #     print(f'outer ADMM iters {i}') 
     #     return x             
     
-    def forward(self, y, mask=None, simple=False):
+    def forward(self, y, mask=None):
         '''
         y in (batch, t, n_nodes, signal_channels)
         actually the ADMMBlock accepts x
@@ -381,7 +391,7 @@ class ADMMBlock(nn.Module):
         # print('any NaN in d_ew', torch.isnan(self.d_ew).nonzero(as_tuple=True), self.d_ew.max(), self.d_ew.min())
         # print('any NaN in phi', torch.isnan(phi).any())
         gamma_u, gamma_d = torch.ones_like(x) * 0.05, torch.ones_like(x) * 0.1
-        if self.ablation in ['None', 'DGLR']:
+        if self.ablation in ['None', 'DGLR', 'simple']:
             gamma = torch.ones_like(x) * 0.1
             phi = self.apply_op_Ldr(x)
             
@@ -392,11 +402,11 @@ class ADMMBlock(nn.Module):
             # phi_old = phi.clone()
             Hty = torch.zeros_like(x)
             Hty[:,0:y.size(1)] = y
-            if simple:
-                RHS_x = self.apply_op_Ldr_T(self.rho * phi + gamma) / 2 + Hty
+            if self.ablation == 'simple':
+                RHS_x = self.apply_op_Ldr_T(self.rho[i] * phi + gamma) / 2 + Hty
                 assert not torch.isnan(RHS_x).any(), f'RHS_x has NaN value in loop {i}, d_ew in {self.d_ew.max().item():.4f}, {self.d_ew.min().item():.4f}'
                 assert not torch.isinf(RHS_x).any() and not torch.isinf(-RHS_x).any(), f'RHS_x has inf value in loop {i}'
-                x = self.CG_solver(self.LHS_simple_x, RHS_x, x, i, self.alpha_x, self.beta_x)
+                x = self.CG_solver(self.LHS_simple_x, RHS_x, x, i, self.alpha_x, self.beta_x, args=y)
                 assert not torch.isnan(x).any(), f'RHS_x has NaN value in loop {i}'
                 assert not torch.isinf(x).any() and not torch.isinf(x).any(), f'x has inf value in loop {i}'
             else:
@@ -437,7 +447,7 @@ class ADMMBlock(nn.Module):
                     gamma_d = gamma_d + self.rho_d[i] * (x - zd)
             # udpata phi
             # phi = self.Phi_PGD(phi, x, gamma, i) # 
-            if self.ablation in ['None', 'DGLR']:
+            if self.ablation in ['None', 'DGLR', 'simple']:
                 # print('executed phi update')
                 phi = self.phi_direct(x, gamma, i)
                 gamma = gamma + self.rho[i] * (phi - self.apply_op_Ldr(x))

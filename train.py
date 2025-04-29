@@ -61,6 +61,7 @@ parser.add_argument('--loggrad', help='log gradient norms', default=-1, type=int
 parser.add_argument('--tout', help='t_out', default=config['model']['t_out'], type=int)
 parser.add_argument('--trunc', dest='trunc', action='store_true')
 parser.set_defaults(trunc=False)
+parser.add_argument('--layers', help='number of layers in the model', default=config['model']['num_layers'], type=int)
 
 parser.add_argument('--predonly', dest='pred_only', action='store_true')
 parser.set_defaults(pred_only=False)
@@ -72,6 +73,7 @@ config['model']['interval'] = args.interval
 config['model']['sharedM'] = args.sharedM
 config['model']['sharedQ'] = args.sharedQ
 config['model']['diff_interval'] = args.diff_interval
+config['model']['num_layers'] = args.layers
 # config['model']['t_out'] = args.tout
 
 # seed, device, training settings
