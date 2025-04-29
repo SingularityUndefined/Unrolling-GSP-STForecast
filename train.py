@@ -62,6 +62,7 @@ parser.add_argument('--tout', help='t_out', default=config['model']['t_out'], ty
 parser.add_argument('--trunc', dest='trunc', action='store_true')
 parser.set_defaults(trunc=False)
 parser.add_argument('--layers', help='number of layers in the model', default=config['model']['num_layers'], type=int)
+parser.add_argument('--CGiters', help='number of CG layers in the model', default=config['model']['CG_iters'], type=int)
 
 parser.add_argument('--predonly', dest='pred_only', action='store_true')
 parser.set_defaults(pred_only=False)
@@ -74,6 +75,7 @@ config['model']['sharedM'] = args.sharedM
 config['model']['sharedQ'] = args.sharedQ
 config['model']['diff_interval'] = args.diff_interval
 config['model']['num_layers'] = args.layers
+config['model']['CG_iters'] = args.CGiters
 # config['model']['t_out'] = args.tout
 
 # seed, device, training settings
