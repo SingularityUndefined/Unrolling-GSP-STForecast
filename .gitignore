@@ -11,4 +11,21 @@ dense_logs_new/
 old_training_commands/
 *_old*
 *old/
+dataset_analysis.txt
+Thuc_Advice.md
+smmothness.py 
+tensorboard_data_proc.py
+test_plot.py
+scripts.py
+script_assert.py
+script1217.py
+ablation_command.sh 
+*.ipynb_checkpoints
+*.ipynb
+*.pyc
+lib/graph_learning_module_old.py
+lib/admm_block_old.py
+running_commands/log_on_panzs1.md
+lib/admm_block_edge_only.py
+connected_subgraph.py
 
