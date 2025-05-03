@@ -15,7 +15,7 @@ from tensorboardX import SummaryWriter
 import yaml
 import gc
 
-with open("config.yaml", 'r') as f: 
+with open("config_weather.yaml", 'r') as f: 
     config = yaml.safe_load(f)
 
 parser = argparse.ArgumentParser()
@@ -99,7 +99,7 @@ if loss_name == 'MSE':
 elif loss_name == 'Huber':
     loss_fn = nn.HuberLoss(delta=1)
 elif loss_name == 'Mix':
-    loss_fn = WeightedMSELoss(args.tin, args.tin + args.tout)
+    loss_fn = WeightedMSELoss(args.tin, args.tin + args.tout, weights=0)
 
 def get_degrees(n_nodes, u_edges:torch.Tensor):
     '''
@@ -129,8 +129,6 @@ dataset_dir = '/home/disk/qij/TS_datasets/'
 if not os.path.exists(dataset_dir):
     dataset_dir = '../datasets/'
 
-if 'PEMS0' in args.dataset:
-    dataset_dir = os.path.join(dataset_dir, 'PEMS0X_data')
 
 experiment_dir = f'lr_{learning_rate:.0e}_seed_{args.seed}'
 # experiment_name = f'{k_hop}_hop_{interval}_int_lr_{learning_rate:.0e}_seed{args.seed}'
@@ -187,11 +185,7 @@ stride = config['data_stride']
 return_time = True
 
 # load data
-if 'PEMS0' in args.dataset:
-    train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=config['model']['use_one_channel'], truncated=args.trunc) # use one channel
-
-else:
-    train_set, val_set, test_set, train_loader, val_loader, test_loader = create_directed_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=config['model']['use_one_channel'])
+train_set, val_set, test_set, train_loader, val_loader, test_loader = create_weather_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=config['model']['use_one_channel']) # use one channel
 signal_channels = train_set.signal_channel
 
 # if args.use_one_channel:
@@ -201,6 +195,7 @@ signal_list = ['flow', 'occupancy', 'speed']
 
 print('number of channels:', signal_channels)
 # data normalization
+'''
 data_normalization = Normalization(train_set, args.mode, device)
 # print(train_set.data[...,0].mean(0).min(), train_set.data[...,0].mean(0).max())
 if args.mode == 'standardize':
@@ -209,7 +204,7 @@ if args.mode == 'standardize':
 else:
     print('min value of data', data_normalization.min[...,0].min(), data_normalization.min[...,0].max())
     print('max value of data', data_normalization.max[...,0].min(), data_normalization.max[...,0].max())
-
+'''
 
 ADMM_info = {
                  'ADMM_iters':config['model']['num_layers'],
@@ -323,26 +318,22 @@ for epoch in range(num_epochs):
     # iteration_count = 0
 
     for iter_idx, (y, x, t_list) in enumerate(tqdm(train_loader)):
-        if iter_idx > 0 and iter_idx % 128 == 0:  # Every 32 iterations
-            # Clear CUDA cache
-            torch.cuda.empty_cache()
-            # Force garbage collection
-            gc.collect()
         # print(y.size(), x.size(), t_list.size())
         iteration_count = iter_idx + 1
         optimizer.zero_grad()
         y, x, t_list = y.to(device), x.to(device), t_list.to(device)  # y in (B, t, nodes, full_signal_channels), x in (B, T, N, pred_signal_channels), T in (B, T)
         # normalization
 
-        normed_y = data_normalization.normalize_data(y)
-        normed_x = data_normalization.normalize_data(x, config['model']['use_one_channel'])
+        # normed_y = data_normalization.normalize_data(y)
+        # normed_x = data_normalization.normalize_data(x, config['model']['use_one_channel'])
 
         try:
             # print('train')
-            normed_output = model(normed_y, t_list)  # in (B, T, nodes, 1)
+            output = model(y, t_list)  # in (B, T, nodes, pred_signal_channels)
+            # normed_output = model(normed_y, t_list)  # in (B, T, nodes, 1)
             # print('trained')
-            if args.mode == 'normalize':
-                normed_output = nn.ReLU()(normed_output) # data_normalization.normalize_data(normed_output, args.use_one_channel)
+            # if args.mode == 'normalize':
+            #     normed_output = nn.ReLU()(normed_output) # data_normalization.normalize_data(normed_output, args.use_one_channel)
             # raise ValueError('raised value error')
         except ValueError as ve:
             # plot the loss curve from loss_list
@@ -354,9 +345,9 @@ for epoch in range(num_epochs):
             plot_loss_curve(train_loss_list, val_loss_list, plot_path)
 
             if not config['model']['use_one_channel']:
-                metrics, metrics_d = test(model, test_loader, data_normalization, False, config, device, signal_channels, use_one_channel=False)
+                metrics, metrics_d = test(model, test_loader, None, False, config, device, signal_channels, use_one_channel=False)
             else:
-                metrics = test(model, test_loader, data_normalization, False, config, device, signal_channels, use_one_channel=True)
+                metrics = test(model, test_loader, None, False, config, device, signal_channels, use_one_channel=True)
 
             logger.info('Test (ALL): rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', metrics['rec_RMSE'], metrics['pred_RMSE'], metrics['pred_MAE'], metrics['pred_MAPE'])
 
@@ -367,36 +358,18 @@ for epoch in range(num_epochs):
             raise ValueError(f'Error in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] - {ve}') from ve
 
         # normalized loss
-        if config['normed_loss']:
-            if masked_flag:
-                loss = loss_fn(normed_output[:, t_in:], normed_x[:, t_in:])
-            else:
-                loss = loss_fn(normed_output, normed_x)
-            loss.backward()
-            nan_name = check_nan_gradients(model)
-            if nan_name is not None:
-                logger.error(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] in parameters {nan_name}')
-                raise ValueError(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] first in {nan_name} in backward propagation')
-            # assert len(nan_list) == 0, f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]'
-            optimizer.step()
-            # recover data
-            output = data_normalization.recover_data(normed_output, config['model']['use_one_channel'])
-
-        # recover data
+        # print(output.size())
+        if masked_flag:
+            loss = loss_fn(output[:, t_in:], x[:, t_in:])
         else:
-            output = data_normalization.recover_data(normed_output, config['model']['use_one_channel'])
-            # print(output.size())
-            if masked_flag:
-                loss = loss_fn(output[:, t_in:], x[:, t_in:])
-            else:
-                loss = loss_fn(output, x)
-            loss.backward()
-            nan_name = check_nan_gradients(model)
-            if nan_name is not None:
-                logger.error(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] first in {nan_name} in backward propagation')
-                raise ValueError(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] first in {nan_name} in backward propagation')
-            # assert len(nan_list) == 0, f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]'
-            optimizer.step()
+            loss = loss_fn(output, x)
+        loss.backward()
+        nan_name = check_nan_gradients(model)
+        if nan_name is not None:
+            logger.error(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] first in {nan_name} in backward propagation')
+            raise ValueError(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] first in {nan_name} in backward propagation')
+        # assert len(nan_list) == 0, f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]'
+        optimizer.step()
         # metrics
         rec_mse += ((x[:, :t_in] - output[:, :t_in]) ** 2).detach().cpu().mean().item()
         # only unknowns
@@ -497,9 +470,9 @@ for epoch in range(num_epochs):
     # validation
     if (epoch + 1) % 5 == 0:
         if not config['model']['use_one_channel']:
-            running_loss, metrics, metric_d = test(model, val_loader, data_normalization, masked_flag, config, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=False)
+            running_loss, metrics, metric_d = test(model, val_loader, None, masked_flag, config, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=False)
         else:
-            running_loss, metrics = test(model, val_loader, data_normalization, masked_flag, config, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=True)
+            running_loss, metrics = test(model, val_loader, None, masked_flag, config, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=True)
 
         val_loss_list.append(running_loss)
 

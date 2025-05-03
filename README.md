@@ -16,7 +16,7 @@ pandas
 run `pip install -r requirements.txt`.
 
 ## Datasets
-PEMS0X datasets are from repository [ASTGNN](https://github.com/guoshnBJTU/ASTGNN/tree/main/data).
+**PEMS0X datasets** are from repository [ASTGNN](https://github.com/guoshnBJTU/ASTGNN/tree/main/data).
 
 <!-- PEMS-BAY and METR-LA datasets are from repository [DCRNN](https://github.com/liyaguang/DCRNN/tree/master/data/sensor_graph). -->
 
@@ -32,6 +32,9 @@ datasets/
 │   ├── PEMS08/
 |
 ```
+**PEMS-BAY** and **METR-LA** dataset are from repository []
+
+
 ## Training and Validating
 training commands for PEMS0X datasets are in `train_command_0X.sh` (change the 'X' to ['3','4','7','8']) when running the bash files. 
 ```

@@ -89,7 +89,10 @@ class SpatialTemporalEmbedding(nn.Module): # Non-parametric
         self.n_nodes = n_nodes
         self.edges = edges
         self.u_dist = u_dist.to(device)
-        self.sigma = self.u_dist.max() / sigma_ratio
+        # self.sigma = self.u_dist.max() / sigma_ratio
+        print(f'old sigma = max_dist/{sigma_ratio} = {self.u_dist.max() / sigma_ratio}')
+        self.sigma = self.u_dist.std() / 50
+        print(f'new sigma = std(udist)/50 = {self.sigma}')
         self.device = device
         # unchanged spatial embedding information
         self.spatial_emb = laplacian_embeddings(self.s_dim, self.n_nodes, self.edges, self.u_dist, self.device, self.sigma) # in (n_nodes, k)

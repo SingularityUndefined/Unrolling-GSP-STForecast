@@ -6,6 +6,8 @@ from torch.utils.data import Dataset, DataLoader
 import os
 import pandas as pd
 from collections import Counter
+import pickle
+
 
 # data_folder = os.path.join('UnrollingForecasting/MainExperiments/datasets/data/', 'PEMS03')
 # graph_csv = 'PEMS03.csv'
@@ -51,6 +53,8 @@ def physical_graph(df, sensor_dict=None):
     ew1 = df[df.columns[-1]].values
     u_distance = np.stack([ew1, ew1]).reshape(-1)
     return n_edges, u_edges, u_distance
+
+
 
 
 class TrafficDataset(Dataset):
@@ -132,14 +136,17 @@ class TrafficDataset(Dataset):
             return torch.Tensor(y), torch.Tensor(x)
 
 
-def directed_physical_graph(adj_mat):
+def directed_physical_graph(adj_mat, squared_dist=False):
     u_edges = []
     u_distance = []
     for i in range(adj_mat.shape[0]):
         for j in range(adj_mat.shape[1]):
             if i != j and adj_mat[i, j] > 0: 
-                u_edges.append([i, j]) 
-                u_distance.append(-np.log(adj_mat[i, j]))
+                u_edges.append([i, j])
+                if squared_dist: 
+                    u_distance.append(np.sqrt(-np.log(adj_mat[i, j])))
+                else:
+                    u_distance.append(-np.log(adj_mat[i, j]))
     for i in range(adj_mat.shape[0]):
         adj_mat[i, i] = 0
     # isolated nodes
@@ -208,9 +215,9 @@ class DirectedTrafficDataset(Dataset):
         # graph
         self.adj_mat = np.load(os.path.join(data_folder, adj_mat_file))
         # NOTE: symmetrize
-        self.adj_mat = (self.adj_mat + self.adj_mat.T) / 2
+        self.adj_mat = np.maximum.reduce([self.adj_mat, self.adj_mat.T]) # (self.adj_mat + self.adj_mat.T) / 2
         self.n_nodes = self.adj_mat.shape[0]
-        self.n_edges, self.u_edges, self.u_distance = directed_physical_graph(self.adj_mat)
+        self.n_edges, self.u_edges, self.u_distance = directed_physical_graph(self.adj_mat, squared_dist=True)
         self.u_edges = torch.Tensor(self.u_edges).type(torch.long)#, dtype=torch.long)
         self.u_distance = torch.Tensor(self.u_distance)
         self.d_edges = torch.cat([self.u_edges, torch.arange(0, self.n_nodes)[:,None] + torch.zeros((2,), dtype=torch.long)], 0)
@@ -235,6 +242,72 @@ class DirectedTrafficDataset(Dataset):
             return torch.Tensor(y), torch.Tensor(x), time
         else:
             return torch.Tensor(y), torch.Tensor(x)
+        
+
+class WeatherDataset(Dataset):
+    def __init__(self, data_folder, adj_file, data_file, T, t=10, stride=1, split='train', return_time=False, use_one_channel=False) -> None:
+        '''
+        train:val:test = 6:2:2
+        Components:
+            data: in (T_total, n_nodes, n_channels)
+        '''
+        super().__init__()
+        # time series
+        self.T = T
+        self.t = t
+        assert T - t < 6, 'T - t should be in 1, 2, 3, 4, 5'
+        self.stride = stride
+        self.return_time = return_time
+        self.use_one_channel = use_one_channel
+
+        data = pickle.load(open(os.path.join(data_folder, data_file), 'rb'))
+        data = np.expand_dims(data['all'], axis=-1) # ndarray in (T_total, n_nodes, 1)
+        
+        print('nan_count', len(data[np.isnan(data)]))
+        # print('datashape', data.shape, data[0:2])
+        self.signal_channel = data.shape[-1]
+        data_len = data.shape[0]
+        # print('dat_len', data_len)
+        assert split in ['train', 'val', 'test'], 'split should in train, val or test'
+        if split == 'train':
+            self.data_begin = 0
+            self.data = data[0:int(data_len * 0.6)]
+        elif split == 'val':
+            self.data_begin = int(data_len * 0.6)
+            self.data = data[int(data_len * 0.6):int(data_len * 0.8)]
+        elif split == 'test':
+            self.data_begin = int(data_len * 0.8)
+            self.data = data[int(data_len * 0.8):]
+        
+        # graph
+        self.adj_mat = np.load(os.path.join(data_folder, adj_file))
+        self.n_nodes = self.adj_mat.shape[0]
+        self.n_edges, self.u_edges, self.u_distance = directed_physical_graph(self.adj_mat, squared_dist=False)
+        self.u_edges = torch.Tensor(self.u_edges).type(torch.long)
+        self.u_distance = torch.Tensor(self.u_distance)
+        self.d_edges = torch.cat([self.u_edges, torch.arange(0, self.n_nodes)[:,None] + torch.zeros((2,), dtype=torch.long)], 0)
+        self.graph_info = {
+            'n_nodes': self.n_nodes,
+            'u_edges': self.u_edges,
+            'u_dist': self.u_distance
+        }
+        # print(self.d_edges)
+    
+    def __len__(self):
+        return self.data.shape[0] - self.T
+    
+    def __getitem__(self, index):
+        y = self.data[index * self.stride:index * self.stride + self.t] # in (t, n_nodes, n_channels)
+        x = self.data[index * self.stride:index * self.stride + self.T] # in (T, n_nodes, n_channels)
+        # model(y) = x
+        if self.use_one_channel:
+            x = x[...,0:1]
+        time = torch.arange(0, self.T).type(torch.long) + index + self.data_begin
+        if self.return_time:
+            return torch.Tensor(y), torch.Tensor(x), time
+        else:
+            return torch.Tensor(y), torch.Tensor(x)
+        
 
 
 

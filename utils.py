@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from dataloader import TrafficDataset, DirectedTrafficDataset
+from dataloader import TrafficDataset, DirectedTrafficDataset, WeatherDataset
 import os
 import logging
 import matplotlib.pyplot as plt
@@ -61,6 +61,28 @@ def create_directed_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch
     val_loader = DataLoader(val_set, batch_size, shuffle=False, num_workers=num_workers)
     test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
+    return train_set, val_set, test_set, train_loader, val_loader, test_loader
+
+def create_weather_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=False):
+    data_folder = os.path.join(dataset_dir, dataset_name, 'dataset/processed')
+    assert dataset_name in ['Molene', 'NOAA']
+    if dataset_name == 'Molene':
+        # data file names
+        data_filename = 'dataset_w=10_steps=[1, 2, 3, 4, 5]_splits=[0.35, 0.15, 0.5].pickle'
+        adj_filename = 'weighted_adjacency.npy'
+    else: # NOAA
+        # datafile names
+        data_filename = 'NOA_w=10_steps=[1, 2, 3, 4, 5]_splits=[0.35, 0.15, 0.5].pickle'
+        adj_filename = 'weighted_adj.npy'
+    
+    # load the dataset
+    train_set = WeatherDataset(data_folder, adj_filename, data_filename, T, t_in, stride, 'train', return_time=return_time, use_one_channel=use_one_channel)
+    val_set = WeatherDataset(data_folder, adj_filename, data_filename, T, t_in, stride, 'val', return_time=return_time, use_one_channel=use_one_channel)
+    test_set = WeatherDataset(data_folder, adj_filename, data_filename, T, t_in, stride, 'test', return_time=return_time, use_one_channel=use_one_channel)
+    # create dataloaders
+    train_loader = DataLoader(train_set, batch_size, shuffle=True, num_workers=num_workers)
+    val_loader = DataLoader(val_set, batch_size, shuffle=False, num_workers=num_workers)
+    test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     return train_set, val_set, test_set, train_loader, val_loader, test_loader
 
 import logging
@@ -226,22 +248,25 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
 
             # y = (y - train_mean) / train_std
             # y = (y - train_min) / (train_max - train_min)
-            normed_y = data_normalization.normalize_data(y)
-            normed_x = data_normalization.normalize_data(x, config['model']['use_one_channel'])
-            normed_output = model(normed_y, t_list)
-            
-            if config['normed_loss']:
-                if loss_fn is not None:
-                    if masked_flag:
-                        loss = loss_fn(normed_output[:, config['model']['t_in']:], normed_x[:, config['model']['t_in']:])
-                    else:
-                        loss = loss_fn(normed_output, normed_x)
-                    running_loss += loss.item()
-                # recover data
-                output = data_normalization.recover_data(normed_output, config['model']['use_one_channel'])
+            if data_normalization is not None:
+                normed_y = data_normalization.normalize_data(y)
+                normed_x = data_normalization.normalize_data(x, config['model']['use_one_channel'])
+                normed_output = model(normed_y, t_list)
+                
+                if config['normed_loss']:
+                    if loss_fn is not None:
+                        if masked_flag:
+                            loss = loss_fn(normed_output[:, config['model']['t_in']:], normed_x[:, config['model']['t_in']:])
+                        else:
+                            loss = loss_fn(normed_output, normed_x)
+                        running_loss += loss.item()
+                    # recover data
+                    output = data_normalization.recover_data(normed_output, config['model']['use_one_channel'])
 
+                else:
+                    output = data_normalization.recover_data(normed_output, config['model']['use_one_channel'])
             else:
-                output = data_normalization.recover_data(normed_output, config['model']['use_one_channel'])
+                output = model(y, t_list)
                 if loss_fn is not None:
                     if masked_flag:
                         loss = loss_fn(output[:,config['model']['t_in']:], x[:,config['model']['t_in']:])

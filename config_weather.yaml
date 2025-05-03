@@ -1,18 +1,18 @@
 num_workers: 4
-learning_rate: 0.0005
-optim: adam
+learning_rate: 0.001
+optim: adamw
 weight_decay: 0.01
 clamp: 0.8
-loss_function: Huber # MSE
+loss_function: MSE
 normed_loss: False
 
-data_stride: 3
+data_stride: 1
 
 model:
-  t_in: 12
-  t_out: 12
+  t_in: 10
+  t_out: 5
   kNN: 6
-  interval: 6
+  interval: 5
   num_blocks: 5
   num_layers: 25
   CG_iters: 3
@@ -32,7 +32,7 @@ ADMM_params:
 
 st_emb_info:
   spatial_dim: 5
-  t_dim: 10
-  tid_dim: 6
-  diw_dim: 4
+  t_dim: 12
+  tid_dim: 8
+  diw_dim: 0
 

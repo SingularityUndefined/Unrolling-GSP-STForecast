@@ -22,6 +22,7 @@ script1217.py
 ablation_command.sh 
 *.ipynb_checkpoints
 *.ipynb
+script.ipynb
 *.pyc
 lib/graph_learning_module_old.py
 lib/admm_block_old.py
