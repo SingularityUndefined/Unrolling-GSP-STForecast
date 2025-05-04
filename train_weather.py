@@ -14,6 +14,7 @@ import sys
 from tensorboardX import SummaryWriter
 import yaml
 import gc
+import copy
 
 with open("config_weather.yaml", 'r') as f: 
     config = yaml.safe_load(f)
@@ -293,6 +294,9 @@ if args.loggrad != -1:
 print('log path', os.path.join(log_dir, log_filename))
 print('tensorboard log path', tensorboard_logdir)
 masked_flag = False
+val_rNMSE = 1000
+best_model = None
+best_epoch = 0
 # train models
 # test = True
 plot_list = f'./dense_logs_new/loss_curves/{experiment_name}'
@@ -397,7 +401,7 @@ for epoch in range(num_epochs):
         # log RMSE on each step during training, 40 times per epoch
         rmse_per_time += ((x - output) ** 2).detach().cpu().mean((0,2,3)) # in (T,)
         rmse_sep += loss.detach().cpu().item()
-        check_per_epoch = 5
+        check_per_epoch = 4
         if iteration_count % (len(train_loader) // check_per_epoch) == 0:
             batch_step = epoch * len(train_loader) + iteration_count#  / len(train_loader)
             # print(batch_step)
@@ -468,22 +472,42 @@ for epoch in range(num_epochs):
     #     logger.info('alpha_zd, (%.4f, %.4f), beta_zd (%.4f, %.4f)', admm_block.alpha_zd.min().item(), admm_block.alpha_zd.max().item(), admm_block.beta_zd.min().item(), admm_block.beta_zd.max().item())
 
     # validation
-    if (epoch + 1) % 5 == 0:
-        if not config['model']['use_one_channel']:
-            running_loss, metrics, metric_d = test(model, val_loader, None, masked_flag, config, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=False)
-        else:
-            running_loss, metrics = test(model, val_loader, None, masked_flag, config, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=True)
+    # if (epoch + 1) % 5 == 0:
+    if not config['model']['use_one_channel']:
+        val_loss, val_metrics, val_metric_d = test(model, val_loader, None, masked_flag, config, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=False, use_tqdm=False)
+    else:
+        val_loss, val_metrics = test(model, val_loader, None, masked_flag, config, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=True, use_tqdm=False)
 
-        val_loss_list.append(running_loss)
+    val_loss_list.append(running_loss)
 
-        logger.info('Validation: Epoch [%d/%d], Loss:%.4f, rec_RMSE: %.4f, RMSE:%.4f,\t' + 'rNMSE: [' + '%.4f, ' * (T - t_in -1) + '%.4f]' + ' (total: %.4f)', epoch + 1, num_epochs, running_loss, metrics['rec_RMSE'], metrics['pred_RMSE'], *metrics['rNMSE_stepwise'], metrics['rNMSE'])
+    logger.info('Validation: Epoch [%d/%d], Loss:%.4f, rec_RMSE: %.4f, RMSE:%.4f,\t' + 'rNMSE: [' + '%.4f, ' * (T - t_in -1) + '%.4f]' + ' (total: %.4f)', epoch + 1, num_epochs, val_loss, val_metrics['rec_RMSE'], val_metrics['pred_RMSE'], *val_metrics['rNMSE_stepwise'], val_metrics['rNMSE'])
 
         # logger.info('Validation: Epoch [%d/%d], Loss:%.4f, rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', epoch + 1, num_epochs, running_loss, metrics['rec_RMSE'], metrics['pred_RMSE'], metrics['pred_MAE'], metrics['pred_MAPE'])
 
-        if not config['model']['use_one_channel']:
-            for i in range(signal_channels):
-                logger.info('Channel %s:\t rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', signal_list[i], metric_d['rec_RMSE'][i], metric_d['pred_RMSE'][i], metric_d['pred_MAE'][i], metric_d['pred_MAPE'][i])
+    if not config['model']['use_one_channel']:
+        for i in range(signal_channels):
+            logger.info('Channel %s:\t rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', signal_list[i], val_metric_d['rec_RMSE'][i], val_metric_d['pred_RMSE'][i], val_metric_d['pred_MAE'][i], val_metric_d['pred_MAPE'][i])
+
+    if val_metrics['rNMSE'] < val_rNMSE:
+        val_rNMSE = val_metrics['rNMSE']
+        logger.info(f'saved best params in epoch {epoch + 1}')
+        best_epoch = epoch + 1
+        # best_model = copy.deepcopy(model).zero_grad(
         # save model dicts
         torch.save(model.state_dict(), os.path.join(model_dir, f'val_{epoch+1}.pth'))
+    
+    # test every 40 iterations
+    if (epoch + 1) % 40 == 0 and best_epoch > epoch + 1 - 40:
+        best_model = copy.deepcopy(model)
+        best_model.load_state_dict(torch.load(os.path.join(model_dir, f'val_{best_epoch}.pth'), weights_only=True))
+        if not config['model']['use_one_channel']:
+            test_loss, test_metrics, test_metric_d = test(best_model, test_loader, None, masked_flag, config, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=False)
+        else:
+            test_loss, test_metrics = test(best_model, test_loader, None, masked_flag, config, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=True)
+
+        logger.info('Test: Epoch [%d/%d/%d], Loss:%.4f, rec_RMSE: %.4f, RMSE:%.4f,\t' + 'rNMSE: [' + '%.4f, ' * (T - t_in -1) + '%.4f]' + ' (total: %.4f)', best_epoch, epoch+1, num_epochs, test_loss, test_metrics['rec_RMSE'], test_metrics['pred_RMSE'], *test_metrics['rNMSE_stepwise'], test_metrics['rNMSE'])
+
+        gc.collect()
+        torch.cuda.empty_cache()
 
 plot_loss_curve(train_loss_list, val_loss_list, plot_path)

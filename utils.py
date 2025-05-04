@@ -223,7 +223,7 @@ def change_model_location(model, model_path, device):
     return model
 
 
-def test(model, val_loader, data_normalization, masked_flag, config, device, signal_channels, mode='test', loss_fn=None, use_one_channel=False):
+def test(model, val_loader, data_normalization, masked_flag, config, device, signal_channels, mode='test', loss_fn=None, use_one_channel=False, use_tqdm=True):
     model.eval()
     batch_count = 0
     all_zero_batchs = 0
@@ -247,7 +247,12 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
         if mode == 'val':
             running_loss = 0
 
-        for y, x, t_list in tqdm(val_loader):
+        if use_tqdm:
+            val_loader_iter = tqdm(val_loader)
+        else:
+            val_loader_iter = val_loader
+            
+        for y, x, t_list in val_loader_iter:
             # if batch_count < 120:
             #     batch_count += 1
             #     continue

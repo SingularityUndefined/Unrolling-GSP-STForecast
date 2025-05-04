@@ -271,13 +271,13 @@ class WeatherDataset(Dataset):
         assert split in ['train', 'val', 'test'], 'split should in train, val or test'
         if split == 'train':
             self.data_begin = 0
-            self.data = data[0:int(data_len * 0.6)]
+            self.data = data[0:int(data_len * 0.35)]
         elif split == 'val':
-            self.data_begin = int(data_len * 0.6)
-            self.data = data[int(data_len * 0.6):int(data_len * 0.8)]
+            self.data_begin = int(data_len * 0.35)
+            self.data = data[int(data_len * 0.35):int(data_len * 0.5)]
         elif split == 'test':
-            self.data_begin = int(data_len * 0.8)
-            self.data = data[int(data_len * 0.8):]
+            self.data_begin = int(data_len * 0.5)
+            self.data = data[int(data_len * 0.5):]
         
         # graph
         self.adj_mat = np.load(os.path.join(data_folder, adj_file))
