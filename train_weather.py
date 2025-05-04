@@ -314,6 +314,9 @@ for epoch in range(num_epochs):
     pred_mae = 0
     pred_mape = 0
     nearest_loss = 0
+    pred_mse_stepwise = torch.zeros((T-t_in,))
+    truth_sq_stepwise = torch.zeros((T-t_in,))
+    truth_sq = 0
 
     # iteration_count = 0
 
@@ -370,11 +373,10 @@ for epoch in range(num_epochs):
             raise ValueError(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] first in {nan_name} in backward propagation')
         # assert len(nan_list) == 0, f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]'
         optimizer.step()
-        # metrics
-        rec_mse += ((x[:, :t_in] - output[:, :t_in]) ** 2).detach().cpu().mean().item()
+        running_loss += loss.item()
         # only unknowns
-        if masked_flag:
-            x, output = x[:, t_in:], output[:, t_in:]
+        # if masked_flag:
+        #     x, output = x[:, t_in:], output[:, t_in:]
 
         # loss has nan
         if torch.isnan(loss).any():
@@ -418,23 +420,17 @@ for epoch in range(num_epochs):
             rmse_sep = 0
 
         # cauculate metrics
-        running_loss += loss.item()
+        # metrics
+        metrics_batch = compute_metrics(output, x, masked_flag, t_in)
+        rec_mse += metrics_batch['rec_MSE'] #((x[:, :t_in] - output[:, :t_in]) ** 2).detach().cpu().mean().item()
+        pred_mse += metrics_batch['pred_MSE']
+        pred_mae += metrics_batch['pred_MAE']
+        pred_mape += metrics_batch['pred_MAPE']
+        pred_mse_stepwise += metrics_batch['pred_MSE_stepwise']
+        truth_sq_stepwise += metrics_batch['truth_sq_stepwise']
+        truth_sq += metrics_batch['truth_sq']
+        nearest_loss += metrics_batch['nearest_loss']
         # with torch.no_grad():
-        if masked_flag:
-            pred_mse += ((x - output) ** 2).detach().cpu().mean().item()
-            pred_mae += (torch.abs(output - x)).detach().cpu().mean().item()
-            # mape
-            mask = (x > 1e-8)
-            pred_mape += (torch.abs(output[mask] - x[mask]) / x[mask]).detach().cpu().mean().item() * 100
-            nearest_loss += ((x[:, 0] - output[:, 0]) ** 2).detach().cpu().mean().item()
-        else:
-            x_pred = x[:, t_in:]
-            output_pred = output[:, t_in:]
-            mask = (x_pred > 1e-8)
-            pred_mse += ((x_pred - output_pred) ** 2).detach().cpu().mean().item()
-            pred_mae += (torch.abs(output_pred - x_pred)).detach().cpu().mean().item()
-            pred_mape += (torch.abs(output_pred[mask] - x_pred[mask]) / x_pred[mask]).detach().cpu().mean().item() * 100
-            nearest_loss += ((x[:, t_in] - output[:, t_in]) ** 2 / y.size(0)).detach().cpu().mean().item()
 
         # glm = model.model_blocks[0]['graph_learning_module']
         # admm_block = model.model_blocks[0]['ADMM_block']
@@ -450,8 +446,12 @@ for epoch in range(num_epochs):
     pred_rmse = math.sqrt(pred_mse / len(train_loader))
     pred_mae = pred_mae / len(train_loader)
     pred_mape = pred_mape / len(train_loader)
+    # print(pred_mse_stepwise.size(), truth_sq_stepwise.size())
+    pred_rnmse_stepwise = torch.sqrt(pred_mse_stepwise / truth_sq_stepwise)
+    pred_rnmse = math.sqrt(pred_mse / truth_sq)
 
-    logger.info('Training: Epoch [%d/%d], Loss:%.4f, rec_RMSE: %.4f, RMSE_next:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', epoch + 1, num_epochs, total_loss, rec_rmse, nearest_rmse, pred_rmse, pred_mae, pred_mape)
+    logger.info('Training: Epoch [%d/%d], Loss:%.4f, rec_RMSE: %.4f, RMSE:%.4f,\t' + 'rNMSE: [' + '%.4f, ' * (len(pred_rnmse_stepwise)-1) + '%.4f]' + ' (total: %.4f)', epoch + 1, num_epochs, total_loss, rec_rmse, pred_rmse, *pred_rnmse_stepwise, pred_rnmse)
+    # logger.info(, *pred_rnmse_stepwise, pred_rnmse)
     # print other parameters
     # print_parameters(model, ['multiQ', 'alpha', 'beta'], logger)
 
@@ -476,7 +476,9 @@ for epoch in range(num_epochs):
 
         val_loss_list.append(running_loss)
 
-        logger.info('Validation: Epoch [%d/%d], Loss:%.4f, rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', epoch + 1, num_epochs, running_loss, metrics['rec_RMSE'], metrics['pred_RMSE'], metrics['pred_MAE'], metrics['pred_MAPE'])
+        logger.info('Validation: Epoch [%d/%d], Loss:%.4f, rec_RMSE: %.4f, RMSE:%.4f,\t' + 'rNMSE: [' + '%.4f, ' * (T - t_in -1) + '%.4f]' + ' (total: %.4f)', epoch + 1, num_epochs, running_loss, metrics['rec_RMSE'], metrics['pred_RMSE'], *metrics['rNMSE_stepwise'], metrics['rNMSE'])
+
+        # logger.info('Validation: Epoch [%d/%d], Loss:%.4f, rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', epoch + 1, num_epochs, running_loss, metrics['rec_RMSE'], metrics['pred_RMSE'], metrics['pred_MAE'], metrics['pred_MAPE'])
 
         if not config['model']['use_one_channel']:
             for i in range(signal_channels):

@@ -226,11 +226,18 @@ def change_model_location(model, model_path, device):
 def test(model, val_loader, data_normalization, masked_flag, config, device, signal_channels, mode='test', loss_fn=None, use_one_channel=False):
     model.eval()
     batch_count = 0
+    all_zero_batchs = 0
+    t_out = config['model']['t_out']
+    t_in = config['model']['t_in']
     with torch.no_grad():
         rec_mse = 0
         pred_mse = 0
         pred_mape = 0
         pred_mae = 0
+        nearest_loss = 0
+        pred_mse_stepwise = torch.zeros((t_out,))
+        truth_sq_stepwise = torch.zeros((t_out,))
+        truth_sq = 0
         if not use_one_channel:
             rec_mse_d = np.zeros((signal_channels,))# .to(device)
             pred_mse_d = np.zeros((signal_channels,))# .to(device)
@@ -278,8 +285,21 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
             #     output = nn.ReLU()(output)
             # output = output * (train_max - train_min) + train_min
             # output = output * train_std + train_mean
-
-            rec_mse += ((x[:,:config['model']['t_in']] - output[:,:config['model']['t_in']]) ** 2).detach().cpu().mean().item()
+            # if data_normalization is not None:
+            # metrics
+            metrics_batch = compute_metrics(output, x, masked_flag, t_in)
+            rec_mse += metrics_batch['rec_MSE'] # ((x[:,:config['model']['t_in']] - output[:,:config['model']['t_in']]) ** 2).detach().cpu().mean().item()
+            pred_mse += metrics_batch['pred_MSE']
+            pred_mae += metrics_batch['pred_MAE']
+            pred_mape += metrics_batch['pred_MAPE']
+            if metrics_batch['pred_MAPE'] < 0:
+                print('exist all zero batchs in ground-truth in pred_mape')
+                all_zero_batchs += 1
+            pred_mse_stepwise += metrics_batch['pred_MSE_stepwise']
+            truth_sq_stepwise += metrics_batch['truth_sq_stepwise']
+            truth_sq += metrics_batch['truth_sq']
+            nearest_loss += metrics_batch['nearest_loss']
+             
             if not use_one_channel:
                 rec_mse_d += ((x[:,:config['model']['t_in']] - output[:,:config['model']['t_in']]) ** 2).detach().cpu().mean((0,1,2)).cpu().numpy()# .item()
             if masked_flag:
@@ -291,25 +311,10 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
 
             
             # x, output = x[:,:,:,1], output[:,:,:,1]
-            if masked_flag:
-                pred_mse += ((x - output) ** 2).detach().cpu().mean().item()
-                pred_mae += (torch.abs(output - x)).detach().cpu().mean().item()
-                mask = (x > 1e-8)
-                if mask.sum() > 0:
-                    pred_mape += (torch.abs(output[mask] - x[mask]) / x[mask]).detach().cpu().mean().item() * 100
-                    batch_count += 1
-            else:
-                x_pred = x[:,config['model']['t_in']:]
-                output_pred = output[:,config['model']['t_in']:]
-                mask = x_pred > 1e-8
-                pred_mse += ((x_pred - output_pred) ** 2).detach().cpu().mean().item()
-                pred_mae += (torch.abs(output_pred - x_pred)).detach().cpu().mean().item()
-                if mask.sum() > 0:
-                    pred_mape_inplace = (torch.abs(output_pred[mask] - x_pred[mask]) / x_pred[mask]).detach().cpu()
-                    # print(pred_mape_inplace, batch_count)
-                    assert not pred_mape_inplace.isnan().any(), print(output_pred[mask].isnan().any(), x_pred[mask].isnan().any())
-                    pred_mape += pred_mape_inplace.mean().item() * 100
-                    batch_count += 1
+            
+            if not masked_flag:
+                x_pred = x[:,t_in:]
+                output_pred = output[:,t_in:]
                 
                 # if mask.sum() == 0:
                 #     print(x_pred, output_pred)
@@ -327,13 +332,15 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
     rec_rmse = math.sqrt(rec_mse / len(val_loader))
     pred_rmse = math.sqrt(pred_mse / len(val_loader))
     pred_mae = pred_mae / len(val_loader)
-    pred_mape = pred_mape / batch_count# len(val_loader)
+    pred_mape = pred_mape / (len(val_loader) - all_zero_batchs) #len(val_loader)
+    pred_rnmse_stepwise = torch.sqrt(pred_mse_stepwise / truth_sq_stepwise)
+    pred_rnmse = torch.sqrt(pred_mse / truth_sq)
 
     if not use_one_channel:
         rec_rmse_d = np.sqrt(rec_mse_d / len(val_loader))
         pred_mse_d = np.sqrt(pred_mse_d / len(val_loader))
         pred_mae_d = pred_mae_d / len(val_loader)
-        pred_mape_d = pred_mape_d / batch_count #len(val_loader)
+        pred_mape_d = pred_mape_d / (len(val_loader) - all_zero_batchs) #len(val_loader)
 
     if mode == 'val':
         running_loss /= len(val_loader)
@@ -342,7 +349,9 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
         'rec_RMSE': rec_rmse,
         'pred_RMSE': pred_rmse,
         'pred_MAE': pred_mae,
-        'pred_MAPE': pred_mape 
+        'pred_MAPE': pred_mape,
+        'rNMSE_stepwise': pred_rnmse_stepwise,
+        'rNMSE': pred_rnmse,
     }
 
     if not use_one_channel:
@@ -364,6 +373,69 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
         else:
             return metrics
     # return running_loss
+
+def compute_metrics(output, x, masked_flag, t_in):
+    """
+    Compute the metrics for the model
+    output: model output, in (B, T, N, C)
+    x: ground truth, in (B, T, N, C)
+    masked_flag: whether to use the masked loss
+    """
+    rec_mse_batch = ((x[:,:t_in] - output[:,:t_in]) ** 2).detach().cpu().mean().item()
+
+    if masked_flag:
+        x, output = x[:,t_in:], output[:,t_in:]
+        pred_mse = ((x - output) ** 2).detach().cpu().mean().item()
+        pred_mae = (torch.abs(output - x)).detach().cpu().mean().item()
+        mask = (x > 1e-8)
+        if mask.sum() > 0:
+            pred_mape = (torch.abs(output[mask] - x[mask]) / x[mask]).detach().cpu().mean().item() * 100
+        else:
+            pred_mape = -1
+            print('exist all zero batchs in ground-truth in pred_mape')
+        
+        # rnmse metric
+        pred_mse_stepwise = ((x - output) ** 2).detach().cpu().mean((0,2,3))
+        truth_sq_stepwise = (x ** 2).detach().cpu().mean((0,2,3))
+        truth_sq = (x ** 2).detach().cpu().mean()
+        nearest_loss = ((x[:, 0] - output[:, 0]) ** 2).detach().cpu().mean().item()
+        # rnmse_stepwise = torch.sqrt(mse_stepwise / truth_stepwise)
+        # rnmse = torch.sqrt(mse_stepwise.mean() / truth_stepwise.mean())
+
+
+    else:
+        x_pred = x[:,t_in:]
+        output_pred = output[:,t_in:]
+        mask = x_pred > 1e-8
+        pred_mse = ((x_pred - output_pred) ** 2).detach().cpu().mean().item()
+        pred_mae = (torch.abs(output_pred - x_pred)).detach().cpu().mean().item()
+        if mask.sum() > 0:
+            pred_mape = (torch.abs(output_pred[mask] - x_pred[mask]) / x_pred[mask]).detach().cpu().mean().item() * 100
+        else:
+            pred_mape = 0
+            print('exist all zero batchs in ground-truth in pred_mape')
+        # rnmse metric
+        pred_mse_stepwise = ((x_pred - output_pred) ** 2).detach().cpu().mean((0,2,3))
+        truth_sq_stepwise = (x_pred ** 2).detach().cpu().mean((0,2,3))
+        truth_sq = (x_pred ** 2).detach().cpu().mean()
+        nearest_loss = ((x[:, t_in] - output[:, t_in]) ** 2).detach().cpu().mean().item()
+        # rnmse_stepwise = torch.sqrt(mse_stepwise / truth_stepwise)
+        # rnmse = torch.sqrt(mse_stepwise.mean() / truth_stepwise.mean())
+    
+    # dictionary for metrics
+    metrics = {
+        'rec_MSE': rec_mse_batch,
+        'pred_MSE': pred_mse,
+        'pred_MAE': pred_mae,
+        'pred_MAPE': pred_mape,
+        'pred_MSE_stepwise': pred_mse_stepwise,
+        'truth_sq_stepwise': truth_sq_stepwise,
+        'truth_sq': truth_sq,
+        'nearest_loss': nearest_loss
+    }
+
+    return metrics
+
 
 
 # check the gradients
