@@ -14,7 +14,7 @@ commands=(
     "$python_path train_weather.py --dataset Molene --batchsize 64 --cuda $cuda_device --neighbors 6 --interval 6 --epoch 200 --stepLR --stepsize 60"
     "$python_path train_weather.py --dataset Molene --batchsize 64 --cuda $cuda_device --neighbors 10 --interval 6 --epoch 200 --stepLR --stepsize 60"
     "$python_path train_weather.py --dataset Molene --batchsize 64 --cuda $cuda_device --neighbors 10 --interval 3 --epoch 200 --stepLR --stepsize 60"
-    "$python_path train_weather.py --dataset Molene --batchsize 64 --cuda $cuda_device --neighbors 6 --interval 5 --epoch 200 --stepLR --stepsize 60"
+    "$python_path train_weather.py --dataset Molene --batchsize 64 --cuda $cuda_device --neighbors 6 --interval 3 --epoch 200 --stepLR --stepsize 60"
 
 )
 

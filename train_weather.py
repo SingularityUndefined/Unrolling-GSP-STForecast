@@ -241,7 +241,8 @@ elif config['optim'] == 'adamw':
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=config['weight_decay'])
 
 if args.use_stepLR:
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
+    # scheduler = lr_scheduler.StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
+    scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, 'min', args.gamma, cooldown=5, min_lr=5e-6)
 
 # tensorboard logger
 tensorboard_logdir = f'./dense_logs_new/TB_log/{experiment_name}/nn_{k_hop}_int_{interval}_{loss_name}'
@@ -529,7 +530,7 @@ for epoch in range(num_epochs):
         torch.save(model.state_dict(), os.path.join(model_dir, f'val_{epoch+1}.pth'))
     
     if args.use_stepLR:
-        scheduler.step()
+        scheduler.step(val_loss)
     # test every 40 iterations
     if (epoch + 1) % 40 == 0 and best_epoch > epoch + 1 - 40:
         gc.collect()
