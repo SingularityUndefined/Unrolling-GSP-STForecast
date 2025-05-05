@@ -251,7 +251,7 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
             val_loader_iter = tqdm(val_loader)
         else:
             val_loader_iter = val_loader
-            
+
         for y, x, t_list in val_loader_iter:
             # if batch_count < 120:
             #     batch_count += 1
@@ -277,6 +277,12 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
 
                 else:
                     output = data_normalization.recover_data(normed_output, config['model']['use_one_channel'])
+                    if loss_fn is not None:
+                        if masked_flag:
+                            loss = loss_fn(output[:,config['model']['t_in']:], x[:,config['model']['t_in']:])
+                        else:
+                            loss = loss_fn(output, x)
+                        running_loss += loss.item()
             else:
                 output = model(y, t_list)
                 if loss_fn is not None:
@@ -296,10 +302,11 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
             rec_mse += metrics_batch['rec_MSE'] # ((x[:,:config['model']['t_in']] - output[:,:config['model']['t_in']]) ** 2).detach().cpu().mean().item()
             pred_mse += metrics_batch['pred_MSE']
             pred_mae += metrics_batch['pred_MAE']
-            pred_mape += metrics_batch['pred_MAPE']
-            if metrics_batch['pred_MAPE'] < 0:
+            if metrics_batch['pred_MAPE'] is None:
                 print('exist all zero batchs in ground-truth in pred_mape')
                 all_zero_batchs += 1
+            else:
+                pred_mape += metrics_batch['pred_MAPE']
             pred_mse_stepwise += metrics_batch['pred_MSE_stepwise']
             truth_sq_stepwise += metrics_batch['truth_sq_stepwise']
             truth_sq += metrics_batch['truth_sq']
@@ -392,12 +399,13 @@ def compute_metrics(output, x, masked_flag, t_in):
         x, output = x[:,t_in:], output[:,t_in:]
         pred_mse = ((x - output) ** 2).detach().cpu().mean().item()
         pred_mae = (torch.abs(output - x)).detach().cpu().mean().item()
-        mask = (x > 1e-8)
+        mask = (torch.abs(x) > 1e-8)
         if mask.sum() > 0:
-            pred_mape = (torch.abs(output[mask] - x[mask]) / x[mask]).detach().cpu().mean().item() * 100
+            pred_mape = (torch.abs(output[mask] - x[mask]) / torch.abs(x[mask])).detach().cpu().mean().item() * 100
         else:
-            pred_mape = -1
-            print('exist all zero batchs in ground-truth in pred_mape')
+            pred_mape = None
+            # print('exist all zero batchs in ground-truth in pred_mape')
+            # print(x)
         
         # rnmse metric
         pred_mse_stepwise = ((x - output) ** 2).detach().cpu().mean((0,2,3))
@@ -411,14 +419,15 @@ def compute_metrics(output, x, masked_flag, t_in):
     else:
         x_pred = x[:,t_in:]
         output_pred = output[:,t_in:]
-        mask = x_pred > 1e-8
+        mask = (torch.abs(x_pred) > 1e-8)
         pred_mse = ((x_pred - output_pred) ** 2).detach().cpu().mean().item()
         pred_mae = (torch.abs(output_pred - x_pred)).detach().cpu().mean().item()
         if mask.sum() > 0:
-            pred_mape = (torch.abs(output_pred[mask] - x_pred[mask]) / x_pred[mask]).detach().cpu().mean().item() * 100
+            pred_mape = (torch.abs(output_pred[mask] - x_pred[mask]) / torch.abs(x_pred[mask])).detach().cpu().mean().item() * 100
         else:
-            pred_mape = 0
-            print('exist all zero batchs in ground-truth in pred_mape')
+            pred_mape = None
+            # print('exist all zero batchs in ground-truth in pred_mape')
+            # print(x_pred)
         # rnmse metric
         pred_mse_stepwise = ((x_pred - output_pred) ** 2).detach().cpu().mean((0,2,3))
         truth_sq_stepwise = (x_pred ** 2).detach().cpu().mean((0,2,3))

@@ -139,6 +139,7 @@ class TrafficDataset(Dataset):
 def directed_physical_graph(adj_mat, squared_dist=False):
     u_edges = []
     u_distance = []
+    print('original edges', (adj_mat > 0).sum())
     for i in range(adj_mat.shape[0]):
         for j in range(adj_mat.shape[1]):
             if i != j and adj_mat[i, j] > 0: 
@@ -147,6 +148,8 @@ def directed_physical_graph(adj_mat, squared_dist=False):
                     u_distance.append(np.sqrt(-np.log(adj_mat[i, j])))
                 else:
                     u_distance.append(-np.log(adj_mat[i, j]))
+    
+    print('uedges original', len(u_distance))
     for i in range(adj_mat.shape[0]):
         adj_mat[i, i] = 0
     # isolated nodes
@@ -219,6 +222,10 @@ class DirectedTrafficDataset(Dataset):
         self.n_nodes = self.adj_mat.shape[0]
         self.n_edges, self.u_edges, self.u_distance = directed_physical_graph(self.adj_mat, squared_dist=True)
         self.u_edges = torch.Tensor(self.u_edges).type(torch.long)#, dtype=torch.long)
+        n_edges = self.u_edges.size(0)
+        dic = Counter([(self.u_edges[i,0], self.u_edges[i,1]) for i in range(n_edges)])
+        assert max(list(dic.values())), 'distance graph asymmetric'
+
         self.u_distance = torch.Tensor(self.u_distance)
         self.d_edges = torch.cat([self.u_edges, torch.arange(0, self.n_nodes)[:,None] + torch.zeros((2,), dtype=torch.long)], 0)
         self.graph_info = {

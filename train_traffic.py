@@ -16,7 +16,7 @@ import yaml
 import gc
 import copy
 
-with open("config_weather.yaml", 'r') as f: 
+with open("config.yaml", 'r') as f: 
     config = yaml.safe_load(f)
 
 parser = argparse.ArgumentParser()
@@ -100,7 +100,7 @@ if loss_name == 'MSE':
 elif loss_name == 'Huber':
     loss_fn = nn.HuberLoss(delta=1)
 elif loss_name == 'Mix':
-    loss_fn = WeightedMSELoss(args.tin, args.tin + args.tout, weights=0)
+    loss_fn = WeightedMSELoss(args.tin, args.tin + args.tout)
 
 def get_degrees(n_nodes, u_edges:torch.Tensor):
     '''
@@ -130,6 +130,8 @@ dataset_dir = '/home/disk/qij/TS_datasets/'
 if not os.path.exists(dataset_dir):
     dataset_dir = '../datasets/'
 
+if 'PEMS0' in args.dataset:
+    dataset_dir = os.path.join(dataset_dir, 'PEMS0X_data')
 
 experiment_dir = f'lr_{learning_rate:.0e}_seed_{args.seed}'
 # experiment_name = f'{k_hop}_hop_{interval}_int_lr_{learning_rate:.0e}_seed{args.seed}'
@@ -186,7 +188,11 @@ stride = config['data_stride']
 return_time = True
 
 # load data
-train_set, val_set, test_set, train_loader, val_loader, test_loader = create_weather_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=config['model']['use_one_channel']) # use one channel
+if 'PEMS0' in args.dataset:
+    train_set, val_set, test_set, train_loader, val_loader, test_loader = create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=config['model']['use_one_channel'], truncated=args.trunc) # use one channel
+
+else:
+    train_set, val_set, test_set, train_loader, val_loader, test_loader = create_directed_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=config['model']['use_one_channel'])
 signal_channels = train_set.signal_channel
 
 # if args.use_one_channel:
@@ -196,7 +202,6 @@ signal_list = ['flow', 'occupancy', 'speed']
 
 print('number of channels:', signal_channels)
 # data normalization
-
 data_normalization = Normalization(train_set, args.mode, device)
 # print(train_set.data[...,0].mean(0).min(), train_set.data[...,0].mean(0).max())
 if args.mode == 'standardize':
@@ -294,8 +299,7 @@ if args.loggrad != -1:
 print('log path', os.path.join(log_dir, log_filename))
 print('tensorboard log path', tensorboard_logdir)
 masked_flag = False
-val_rNMSE = 1000
-best_model = None
+best_val_loss = 1000
 best_epoch = 0
 # train models
 # test = True
@@ -318,13 +322,15 @@ for epoch in range(num_epochs):
     pred_mae = 0
     pred_mape = 0
     nearest_loss = 0
-    pred_mse_stepwise = torch.zeros((T-t_in,))
-    truth_sq_stepwise = torch.zeros((T-t_in,))
-    truth_sq = 0
 
     # iteration_count = 0
 
     for iter_idx, (y, x, t_list) in enumerate(tqdm(train_loader)):
+        if iter_idx > 0 and iter_idx % 128 == 0:  # Every 32 iterations
+            # Clear CUDA cache
+            torch.cuda.empty_cache()
+            # Force garbage collection
+            gc.collect()
         # print(y.size(), x.size(), t_list.size())
         iteration_count = iter_idx + 1
         optimizer.zero_grad()
@@ -336,7 +342,6 @@ for epoch in range(num_epochs):
 
         try:
             # print('train')
-            # output = model(y, t_list)  # in (B, T, nodes, pred_signal_channels)
             normed_output = model(normed_y, t_list)  # in (B, T, nodes, 1)
             # print('trained')
             if args.mode == 'normalize':
@@ -352,9 +357,9 @@ for epoch in range(num_epochs):
             plot_loss_curve(train_loss_list, val_loss_list, plot_path)
 
             if not config['model']['use_one_channel']:
-                metrics, metrics_d = test(model, test_loader, None, False, config, device, signal_channels, use_one_channel=False)
+                metrics, metrics_d = test(model, test_loader, data_normalization, False, config, device, signal_channels, use_one_channel=False)
             else:
-                metrics = test(model, test_loader, None, False, config, device, signal_channels, use_one_channel=True)
+                metrics = test(model, test_loader, data_normalization, False, config, device, signal_channels, use_one_channel=True)
 
             logger.info('Test (ALL): rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', metrics['rec_RMSE'], metrics['pred_RMSE'], metrics['pred_MAE'], metrics['pred_MAPE'])
 
@@ -395,24 +400,11 @@ for epoch in range(num_epochs):
                 raise ValueError(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] first in {nan_name} in backward propagation')
             # assert len(nan_list) == 0, f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]'
             optimizer.step()
-        # print(output.size())
-        '''
-        if masked_flag:
-            loss = loss_fn(output[:, t_in:], x[:, t_in:])
-        else:
-            loss = loss_fn(output, x)
-        loss.backward()
-        nan_name = check_nan_gradients(model)
-        if nan_name is not None:
-            logger.error(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] first in {nan_name} in backward propagation')
-            raise ValueError(f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}] first in {nan_name} in backward propagation')
-        # assert len(nan_list) == 0, f'Gradient has NaN value in [Epoch {epoch+1}/{num_epochs}, Iter {iteration_count}/{len(train_loader)}]'
-        optimizer.step()
-        '''
-        running_loss += loss.item()
+        # metrics
+        rec_mse += ((x[:, :t_in] - output[:, :t_in]) ** 2).detach().cpu().mean().item()
         # only unknowns
-        # if masked_flag:
-        #     x, output = x[:, t_in:], output[:, t_in:]
+        if masked_flag:
+            x, output = x[:, t_in:], output[:, t_in:]
 
         # loss has nan
         if torch.isnan(loss).any():
@@ -433,7 +425,7 @@ for epoch in range(num_epochs):
         # log RMSE on each step during training, 40 times per epoch
         rmse_per_time += ((x - output) ** 2).detach().cpu().mean((0,2,3)) # in (T,)
         rmse_sep += loss.detach().cpu().item()
-        check_per_epoch = 4
+        check_per_epoch = 5
         if iteration_count % (len(train_loader) // check_per_epoch) == 0:
             batch_step = epoch * len(train_loader) + iteration_count#  / len(train_loader)
             # print(batch_step)
@@ -456,17 +448,23 @@ for epoch in range(num_epochs):
             rmse_sep = 0
 
         # cauculate metrics
-        # metrics
-        metrics_batch = compute_metrics(output, x, masked_flag, t_in)
-        rec_mse += metrics_batch['rec_MSE'] #((x[:, :t_in] - output[:, :t_in]) ** 2).detach().cpu().mean().item()
-        pred_mse += metrics_batch['pred_MSE']
-        pred_mae += metrics_batch['pred_MAE']
-        pred_mape += metrics_batch['pred_MAPE']
-        pred_mse_stepwise += metrics_batch['pred_MSE_stepwise']
-        truth_sq_stepwise += metrics_batch['truth_sq_stepwise']
-        truth_sq += metrics_batch['truth_sq']
-        nearest_loss += metrics_batch['nearest_loss']
+        running_loss += loss.item()
         # with torch.no_grad():
+        if masked_flag:
+            pred_mse += ((x - output) ** 2).detach().cpu().mean().item()
+            pred_mae += (torch.abs(output - x)).detach().cpu().mean().item()
+            # mape
+            mask = (x > 1e-8)
+            pred_mape += (torch.abs(output[mask] - x[mask]) / x[mask]).detach().cpu().mean().item() * 100
+            nearest_loss += ((x[:, 0] - output[:, 0]) ** 2).detach().cpu().mean().item()
+        else:
+            x_pred = x[:, t_in:]
+            output_pred = output[:, t_in:]
+            mask = (x_pred > 1e-8)
+            pred_mse += ((x_pred - output_pred) ** 2).detach().cpu().mean().item()
+            pred_mae += (torch.abs(output_pred - x_pred)).detach().cpu().mean().item()
+            pred_mape += (torch.abs(output_pred[mask] - x_pred[mask]) / x_pred[mask]).detach().cpu().mean().item() * 100
+            nearest_loss += ((x[:, t_in] - output[:, t_in]) ** 2 / y.size(0)).detach().cpu().mean().item()
 
         # glm = model.model_blocks[0]['graph_learning_module']
         # admm_block = model.model_blocks[0]['ADMM_block']
@@ -482,12 +480,8 @@ for epoch in range(num_epochs):
     pred_rmse = math.sqrt(pred_mse / len(train_loader))
     pred_mae = pred_mae / len(train_loader)
     pred_mape = pred_mape / len(train_loader)
-    # print(pred_mse_stepwise.size(), truth_sq_stepwise.size())
-    pred_rnmse_stepwise = torch.sqrt(pred_mse_stepwise / truth_sq_stepwise)
-    pred_rnmse = math.sqrt(pred_mse / truth_sq)
 
-    logger.info('Training: Epoch [%d/%d], LR:%.2e, Loss:%.4f, rec_RMSE: %.4f, RMSE:%.4f,\t' + 'rNMSE: [' + '%.4f, ' * (len(pred_rnmse_stepwise)-1) + '%.4f]' + ' (total: %.4f)', epoch + 1, num_epochs, optimizer.param_groups[0]['lr'], total_loss, rec_rmse, pred_rmse, *pred_rnmse_stepwise, pred_rnmse)
-    # logger.info(, *pred_rnmse_stepwise, pred_rnmse)
+    logger.info('Training: Epoch [%d/%d], Loss:%.4f, rec_RMSE: %.4f, RMSE_next:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', epoch + 1, num_epochs, total_loss, rec_rmse, nearest_rmse, pred_rmse, pred_mae, pred_mape)
     # print other parameters
     # print_parameters(model, ['multiQ', 'alpha', 'beta'], logger)
 
@@ -506,32 +500,31 @@ for epoch in range(num_epochs):
     # validation
     # if (epoch + 1) % 5 == 0:
     if not config['model']['use_one_channel']:
-        val_loss, val_metrics, val_metric_d = test(model, val_loader, data_normalization, masked_flag, config, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=False, use_tqdm=False)
+        val_loss, metrics, metric_d = test(model, val_loader, data_normalization, masked_flag, config, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=False)
     else:
-        val_loss, val_metrics = test(model, val_loader, data_normalization, masked_flag, config, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=True, use_tqdm=False)
+        val_loss, metrics = test(model, val_loader, data_normalization, masked_flag, config, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=True)
 
     val_loss_list.append(val_loss)
 
-    logger.info('Validation: Epoch [%d/%d], Loss:%.4f, rec_RMSE: %.4f, RMSE:%.4f,\t' + 'rNMSE: [' + '%.4f, ' * (T - t_in -1) + '%.4f]' + ' (total: %.4f)', epoch + 1, num_epochs, val_loss, val_metrics['rec_RMSE'], val_metrics['pred_RMSE'], *val_metrics['rNMSE_stepwise'], val_metrics['rNMSE'])
-
-        # logger.info('Validation: Epoch [%d/%d], Loss:%.4f, rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', epoch + 1, num_epochs, running_loss, metrics['rec_RMSE'], metrics['pred_RMSE'], metrics['pred_MAE'], metrics['pred_MAPE'])
+    logger.info('Validation: Epoch [%d/%d], Loss:%.4f, rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', epoch + 1, num_epochs, val_loss, metrics['rec_RMSE'], metrics['pred_RMSE'], metrics['pred_MAE'], metrics['pred_MAPE'])
 
     if not config['model']['use_one_channel']:
         for i in range(signal_channels):
-            logger.info('Channel %s:\t rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', signal_list[i], val_metric_d['rec_RMSE'][i], val_metric_d['pred_RMSE'][i], val_metric_d['pred_MAE'][i], val_metric_d['pred_MAPE'][i])
-
-    if val_metrics['rNMSE'] < val_rNMSE:
-        val_rNMSE = val_metrics['rNMSE']
-        logger.info(f'saved best params in epoch {epoch + 1}')
+            logger.info('Channel %s:\t rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', signal_list[i], metric_d['rec_RMSE'][i], metric_d['pred_RMSE'][i], metric_d['pred_MAE'][i], metric_d['pred_MAPE'][i])
+    # save model dicts
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
         best_epoch = epoch + 1
-        # best_model = copy.deepcopy(model).zero_grad(
-        # save model dicts
+        logger.info('saved best params at epoch {epoch + 1}')
         torch.save(model.state_dict(), os.path.join(model_dir, f'val_{epoch+1}.pth'))
-    
+
+    # if val_metrics['']
+    # torch.save(model.state_dict(), os.path.join(model_dir, f'val_{epoch+1}.pth'))
     if args.use_stepLR:
         scheduler.step()
-    # test every 40 iterations
-    if (epoch + 1) % 40 == 0 and best_epoch > epoch + 1 - 40:
+    
+    # test
+    if (epoch + 1) % 10 == 0 and best_epoch > epoch + 1 - 10:
         gc.collect()
         torch.cuda.empty_cache()
         best_model = copy.deepcopy(model)
@@ -541,6 +534,6 @@ for epoch in range(num_epochs):
         else:
             test_loss, test_metrics = test(best_model, test_loader, data_normalization, masked_flag, config, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=True)
 
-        logger.info('Test: Epoch [%d/%d/%d], Loss:%.4f, rec_RMSE: %.4f, RMSE:%.4f,\t' + 'rNMSE: [' + '%.4f, ' * (T - t_in -1) + '%.4f]' + ' (total: %.4f)', best_epoch, epoch+1, num_epochs, test_loss, test_metrics['rec_RMSE'], test_metrics['pred_RMSE'], *test_metrics['rNMSE_stepwise'], test_metrics['rNMSE'])
+        logger.info('Test: Epoch [%d/%d/%d], Loss:%.4f, rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', best_epoch, epoch + 1, num_epochs, test_loss, test_metrics['rec_RMSE'], test_metrics['pred_RMSE'], test_metrics['pred_MAE'], test_metrics['pred_MAPE'])
 
 plot_loss_curve(train_loss_list, val_loss_list, plot_path)
