@@ -55,6 +55,7 @@ parser.add_argument('--sharedV', dest='diff_interval', action='store_false')
 parser.set_defaults(diff_interval=config['model']['diff_interval'])
 # training settings
 parser.add_argument('--epochs', help='running epochs', default=70, type=int)
+parser.add_argument('--start_epochs', help='start epochs', default=0, type=int)
 
 # log settings
 parser.add_argument('--loggrad', help='log gradient norms', default=-1, type=int) # -1 stand for no log, 0 for log all, >0 for log every n iterations
@@ -222,7 +223,7 @@ ADMM_info = {
                  }
 # graph_sigma = 6
 
-model_pretrained_path = None
+model_pretrained_path = None# 'dense_logs_new/models/lr_5e-04_seed_3407/diffV_shareQ_PEMS03_5b25_4h_6f_true_loss/nn_4_int_6_Huber/val_10.pth'
 
 
 print('args.ablation', args.ablation)
@@ -230,8 +231,10 @@ model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, interval, tr
 # 'UnrollingForecasting/MainExperiments/models/v2/PEMS04/direct_4b_4h_6f/val_15.pth'
 
 if model_pretrained_path is not None:
-    model = model.load_state_dict(torch.load(model_pretrained_path))
+    model = change_model_location(model, model_pretrained_path, device)
     # TODO: map to models
+
+# best_model = copy.deepcopy(model)
 
 ADMM_iters = ADMM_info['ADMM_iters']
 
@@ -246,7 +249,7 @@ elif config['optim'] == 'adamw':
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=config['weight_decay'])
 
 if args.use_stepLR:
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
+    scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, 'min', args.gamma, 5, cooldown=5, min_lr=5e-6) # StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
 
 # tensorboard logger
 tensorboard_logdir = f'./dense_logs_new/TB_log/{experiment_name}/nn_{k_hop}_int_{interval}_{loss_name}'
@@ -299,8 +302,8 @@ if args.loggrad != -1:
 print('log path', os.path.join(log_dir, log_filename))
 print('tensorboard log path', tensorboard_logdir)
 masked_flag = False
-best_val_loss = 1000
-best_epoch = 0
+best_val_loss = 9.9
+best_epoch = args.start_epochs
 # train models
 # test = True
 plot_list = f'./dense_logs_new/loss_curves/{experiment_name}'
@@ -311,7 +314,7 @@ plot_path = os.path.join(plot_list, plot_filename)
 train_loss_list = []
 val_loss_list = []
 
-for epoch in range(num_epochs):
+for epoch in range(args.start_epochs, num_epochs):
     # TODO: remember to / 50 # don't need now
     model.train()
     running_loss = 0
@@ -481,7 +484,7 @@ for epoch in range(num_epochs):
     pred_mae = pred_mae / len(train_loader)
     pred_mape = pred_mape / len(train_loader)
 
-    logger.info('Training: Epoch [%d/%d], Loss:%.4f, rec_RMSE: %.4f, RMSE_next:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', epoch + 1, num_epochs, total_loss, rec_rmse, nearest_rmse, pred_rmse, pred_mae, pred_mape)
+    logger.info('Training: Epoch [%d/%d], LR:%.2e, Loss:%.4f, rec_RMSE: %.4f, RMSE_next:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', epoch + 1, num_epochs, optimizer.param_groups[0]['lr'], total_loss, rec_rmse, nearest_rmse, pred_rmse, pred_mae, pred_mape)
     # print other parameters
     # print_parameters(model, ['multiQ', 'alpha', 'beta'], logger)
 
@@ -515,13 +518,14 @@ for epoch in range(num_epochs):
     if val_loss < best_val_loss:
         best_val_loss = val_loss
         best_epoch = epoch + 1
-        logger.info('saved best params at epoch {epoch + 1}')
+        logger.info(f'saved best params at epoch {epoch + 1}')
         torch.save(model.state_dict(), os.path.join(model_dir, f'val_{epoch+1}.pth'))
 
     # if val_metrics['']
     # torch.save(model.state_dict(), os.path.join(model_dir, f'val_{epoch+1}.pth'))
     if args.use_stepLR:
-        scheduler.step()
+        scheduler.step(val_loss)
+        logger.info('Current Learning Rate: %.2e', optimizer.param_groups[0]['lr'])
     
     # test
     if (epoch + 1) % 10 == 0 and best_epoch > epoch + 1 - 10:
@@ -529,11 +533,16 @@ for epoch in range(num_epochs):
         torch.cuda.empty_cache()
         best_model = copy.deepcopy(model)
         best_model.load_state_dict(torch.load(os.path.join(model_dir, f'val_{best_epoch}.pth'), weights_only=True))
+        best_model.zero_grad()
         if not config['model']['use_one_channel']:
             test_loss, test_metrics, test_metric_d = test(best_model, test_loader, data_normalization, masked_flag, config, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=False)
         else:
             test_loss, test_metrics = test(best_model, test_loader, data_normalization, masked_flag, config, device, signal_channels, mode='val', loss_fn=loss_fn, use_one_channel=True)
 
         logger.info('Test: Epoch [%d/%d/%d], Loss:%.4f, rec_RMSE:%.4f, RMSE:%.4f, MAE:%.4f, MAPE(%%):%.4f', best_epoch, epoch + 1, num_epochs, test_loss, test_metrics['rec_RMSE'], test_metrics['pred_RMSE'], test_metrics['pred_MAE'], test_metrics['pred_MAPE'])
+
+        gc.collect()
+        torch.cuda.empty_cache()
+        del best_model
 
 plot_loss_curve(train_loss_list, val_loss_list, plot_path)
