@@ -63,6 +63,7 @@ parser.add_argument('--loggrad', help='log gradient norms', default=-1, type=int
 parser.add_argument('--tout', help='t_out', default=config['model']['t_out'], type=int)
 parser.add_argument('--trunc', dest='trunc', action='store_true')
 parser.set_defaults(trunc=False)
+parser.add_argument('--blocks', help='number of blocks in the model', default=config['model']['num_blocks'], type=int)
 parser.add_argument('--layers', help='number of layers in the model', default=config['model']['num_layers'], type=int)
 parser.add_argument('--CGiters', help='number of CG layers in the model', default=config['model']['CG_iters'], type=int)
 
@@ -76,6 +77,7 @@ config['model']['interval'] = args.interval
 config['model']['sharedM'] = args.sharedM
 config['model']['sharedQ'] = args.sharedQ
 config['model']['diff_interval'] = args.diff_interval
+config['model']['num_blocks'] = args.blocks
 config['model']['num_layers'] = args.layers
 config['model']['CG_iters'] = args.CGiters
 # config['model']['t_out'] = args.tout
@@ -302,7 +304,7 @@ if args.loggrad != -1:
 print('log path', os.path.join(log_dir, log_filename))
 print('tensorboard log path', tensorboard_logdir)
 masked_flag = False
-best_val_loss = 9.9
+best_val_loss = 20
 best_epoch = args.start_epochs
 # train models
 # test = True
