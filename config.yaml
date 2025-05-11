@@ -2,7 +2,7 @@ num_workers: 4
 learning_rate: 0.0005
 optim: adam
 weight_decay: 0.01
-clamp: 0.8
+clamp: 1.2 # 0.8
 loss_function: Huber # MSE
 normed_loss: False
 

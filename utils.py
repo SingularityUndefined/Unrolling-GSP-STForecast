@@ -209,7 +209,9 @@ def print_gradients(model):
 
 def change_model_location(model, model_path, device):
     model_params = torch.load(model_path, map_location=device)
-    model.load_state_dict(model_params)
+    missing_keys, unexpected_keys = model.load_state_dict(model_params, strict=False)
+    print('missing keys:', missing_keys)
+    print('unexpected keys:', unexpected_keys)
     # model = torch.load(model_path, map_location=device).to(device)
     for name, module in model.named_children():
         if hasattr(module, 'device'):

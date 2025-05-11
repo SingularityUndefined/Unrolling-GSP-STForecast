@@ -231,9 +231,6 @@ model_pretrained_path = None# 'dense_logs_new/models/lr_5e-04_seed_3407/diffV_sh
 print('args.ablation', args.ablation)
 model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, interval, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, st_emb_info=config['st_emb_info'], use_extrapolation=config['model']['use_extrapolation'], extrapolation_agg_layers=args.FElayers, use_one_channel=config['model']['use_one_channel'], sharedM=config['model']['sharedM'], sharedQ=config['model']['sharedQ'], diff_interval=config['model']['diff_interval'], predict_only=args.pred_only).to(device)
 # 'UnrollingForecasting/MainExperiments/models/v2/PEMS04/direct_4b_4h_6f/val_15.pth'
-
-if model_pretrained_path is not None:
-    model = change_model_location(model, model_pretrained_path, device)
     # TODO: map to models
 
 # best_model = copy.deepcopy(model)
@@ -306,6 +303,10 @@ print('tensorboard log path', tensorboard_logdir)
 masked_flag = False
 best_val_loss = 20
 best_epoch = args.start_epochs
+
+if args.start_epochs > 0:
+    model_pretrained_path = os.path.join(model_dir, f'val_{args.start_epochs}.pth')
+    model = change_model_location(model, model_pretrained_path, device)
 # train models
 # test = True
 plot_list = f'./dense_logs_new/loss_curves/{experiment_name}'
