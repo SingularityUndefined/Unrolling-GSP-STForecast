@@ -94,9 +94,7 @@ elif loss_name == 'Mix':
 
 k_hop = config['model']['kNN']
 interval = config['model']['interval']
-dataset_dir = '/home/disk/qij/TS_datasets/'
-if not os.path.exists(dataset_dir):
-    dataset_dir = '../datasets/'
+dataset_dir = '../TS_datasets/'
 
 if 'PEMS0' in args.dataset:
     dataset_dir = os.path.join(dataset_dir, 'PEMS0X_data')
