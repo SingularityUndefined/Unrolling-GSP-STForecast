@@ -18,13 +18,9 @@ yaml
 run `pip install -r requirements.txt`.
 
 ## Datasets
-**PEMS0X datasets** are from repository [ASTGNN](https://github.com/guoshnBJTU/ASTGNN/tree/main/data).
+**PEMS0X datasets** are from repository [ASTGNN](https://github.com/guoshnBJTU/ASTGNN/tree/main/data). Data directories:
 
 <!-- PEMS-BAY and METR-LA datasets are from repository [DCRNN](https://github.com/liyaguang/DCRNN/tree/master/data/sensor_graph). -->
-
-Save all the datasets in folder `datasets` parallel to our code folder `Unrolling-GSP-STForecast`. 
-
-Data directories:
 ```
 datasets/
 ├── PEMS0X——data/
@@ -33,8 +29,9 @@ datasets/
 │   ├── PEMS07/
 │   ├── PEMS08/
 ```
-**PEMS-BAY** and **METR-LA** dataset are from repository []. Each folder contains two `.npy` files for adjacency matrix and time series data. 
+**PEMS-BAY** and **METR-LA** dataset are preprocessed from repository [DCRNN](https://github.com/liyaguang/DCRNN/tree/master/data/sensor_graph). Each folder contains two `.npy` files for adjacency matrix and time series data. 
 
+We also provide our dataset via [Google Drive](). Download from this link and put it outside this repository folder as `../TS_datasets`.
 
 ## Training and Testing
 

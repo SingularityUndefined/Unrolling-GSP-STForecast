@@ -31,4 +31,8 @@ running_commands/log_on_panzs1.md
 lib/admm_block_edge_only.py
 connected_subgraph.py
 dense_graph_script.py
+*.sh
+running_commands/
+dataset_utils/
+
 
