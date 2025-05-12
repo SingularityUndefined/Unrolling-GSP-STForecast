@@ -1,17 +1,19 @@
 # Lightweight Transformer via Unrolling of Mixed Graph Algorithms for Traffic Forecast
 
-This is a PyTorch implementation of our submission (ID: 1707) to ICML 2025.
+This is a PyTorch implementation of our submission (ID: 4690) to NeurIPS 2025.
 ## Requirements
 
 Required packages for this implementation:
 
 ```
 torch>=2.4.1
-tqdm
+tqdm 
 numpy 
 matplotlib 
 networkx>=2.5
 pandas
+tensorboardX
+yaml
 ```
 run `pip install -r requirements.txt`.
 
@@ -30,19 +32,27 @@ datasets/
 │   ├── PEMS04/
 │   ├── PEMS07/
 │   ├── PEMS08/
-|
 ```
-**PEMS-BAY** and **METR-LA** dataset are from repository []
+**PEMS-BAY** and **METR-LA** dataset are from repository []. Each folder contains two `.npy` files for adjacency matrix and time series data. 
 
 
-## Training and Validating
-training commands for PEMS0X datasets are in `train_command_0X.sh` (change the 'X' to ['3','4','7','8']) when running the bash files. 
+## Training and Testing
+
+The default settings are in `config.yaml`. We provide multiple parsers to change the configurations. 
+
+**Example 1**: running main experiment on PEMS03 dataset:
 ```
-bash train_command_0X.sh -c <your-cuda-device> -p <your-python-path>
+python train_traffic.py --dataset PEMS03 --cuda 0 --batchsize 12
 ```
-Example running command for PEMS04:
+
+**Example 2**: running 'w/o DGLR' experiment on METR-LA dataset:
 ```
-python train.py --dataset PEMS04 --hop 4 --batchsize 8  --loggrad 20 --cuda 0 --lr 1e-3 --clamp 0.8 --extrapolation --loss Huber
+python train_traffic.py --dataset METR-LA --cuda 1 --ablation DGLR --batchsize 16
+```
+
+**Example 3**: testing a UT model on PEMS-BAY:
+```
+python test_traffic.py --dataset PEMS-BAY --cuda 0 --ablation UT --batchsize 64 --path <model_checkpoints>
 ```
 
 
