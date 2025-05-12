@@ -126,9 +126,7 @@ def get_degrees(n_nodes, u_edges:torch.Tensor):
 # hops
 k_hop = config['model']['kNN']
 interval = config['model']['interval']
-dataset_dir = '/home/disk/qij/TS_datasets/'
-if not os.path.exists(dataset_dir):
-    dataset_dir = '../datasets/'
+dataset_dir = '../TS_datasets/'
 
 
 experiment_dir = f'lr_{learning_rate:.0e}_seed_{args.seed}'

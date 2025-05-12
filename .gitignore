@@ -32,7 +32,7 @@ lib/admm_block_edge_only.py
 connected_subgraph.py
 dense_graph_script.py
 *.sh
-running_commands/
+running_commands/*
 dataset_utils/
-
+dataset_utils/*
 
