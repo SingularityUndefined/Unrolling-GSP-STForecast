@@ -31,7 +31,7 @@ datasets/
 ```
 **PEMS-BAY** and **METR-LA** dataset are preprocessed from repository [DCRNN](https://github.com/liyaguang/DCRNN/tree/master/data/sensor_graph). Each folder contains two `.npy` files for adjacency matrix and time series data. 
 
-We also provide our dataset via [Google Drive](). Download from this link and put it outside this repository folder as `../TS_datasets`.
+We also provide our dataset together with our code via *Supplementary Materials* in Openreview. Download from this link and put it outside this repository folder as `../TS_datasets`.
 
 ## Training and Testing
 
