@@ -1,6 +1,4 @@
 # Lightweight Transformer via Unrolling of Mixed Graph Algorithms for Traffic Forecast
-
-This is a PyTorch implementation of our submission (ID: 4690) to NeurIPS 2025.
 ## Requirements
 
 Required packages for this implementation:
