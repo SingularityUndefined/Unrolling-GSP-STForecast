@@ -11,7 +11,8 @@ from utils import *
 import argparse
 from collections import Counter
 import sys
-from tensorboardX import SummaryWriter
+# from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 import yaml
 import gc
 import copy
@@ -66,6 +67,7 @@ parser.set_defaults(trunc=False)
 parser.add_argument('--blocks', help='number of blocks in the model', default=config['model']['num_blocks'], type=int)
 parser.add_argument('--layers', help='number of layers in the model', default=config['model']['num_layers'], type=int)
 parser.add_argument('--CGiters', help='number of CG layers in the model', default=config['model']['CG_iters'], type=int)
+parser.add_argument('--stride', help='sampling stride of dataset', default=config['data_stride'], type=int)
 
 parser.add_argument('--predonly', dest='pred_only', action='store_true')
 parser.set_defaults(pred_only=False)
@@ -143,7 +145,7 @@ interval = config['model']['interval']
 feature_channels = config['model']['feature_channels']
 ADMM_iters = config['model']['num_layers']
 
-experiment_name = f"{dataset_name}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f"
+experiment_name = f"{dataset_name}_s{args.stride}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f"
 
 if args.pred_only:
     experiment_name = 'predOnly_' + experiment_name
@@ -184,7 +186,7 @@ log_filename = f"nn_{k_hop}_int_{interval}_{loss_name}.log"
 
 T = config['model']['t_in'] + config['model']['t_out']
 t_in = config['model']['t_in']
-stride = config['data_stride']
+stride = args.stride
 
 return_time = True
 

@@ -11,7 +11,8 @@ from utils import *
 import argparse
 from collections import Counter
 import sys
-from tensorboardX import SummaryWriter
+# from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 import yaml
 import gc
 
