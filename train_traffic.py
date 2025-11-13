@@ -198,6 +198,7 @@ else:
     train_set, val_set, test_set, train_loader, val_loader, test_loader = create_directed_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=config['model']['use_one_channel'])
 signal_channels = train_set.signal_channel
 
+print('dataset size', train_set.__len__(), val_set.__len__(), test_set.__len__())
 # if args.use_one_channel:
 #     signal_channels = 1
 
