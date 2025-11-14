@@ -78,7 +78,8 @@ class UnrollingModel(nn.Module):
         
         self.use_st_emb = use_st_emb
         if self.use_st_emb:
-            self.st_emb = SpatialTemporalEmbedding(graph_info['n_nodes'], graph_info['u_edges'], graph_info['u_dist'], sigma_ratio, self.device, st_emb_info['spatial_dim'], st_emb_info['t_dim'], st_emb_info['tid_dim'], st_emb_info['diw_dim'])
+            # Learnable = True
+            self.st_emb = SpatialTemporalEmbedding(graph_info['n_nodes'], graph_info['u_edges'], graph_info['u_dist'], sigma_ratio, self.device, st_emb_info['spatial_dim'], st_emb_info['t_dim'], st_emb_info['tid_dim'], st_emb_info['diw_dim'], learnable=True)
             signal_emb_channels = signal_channels + st_emb_info['spatial_dim'] + st_emb_info['t_dim'] + st_emb_info['tid_dim'] + st_emb_info['diw_dim']
         else:
             signal_emb_channels = signal_channels

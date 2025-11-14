@@ -226,7 +226,7 @@ ADMM_info = {
                  }
 # graph_sigma = 6
 
-model_pretrained_path = None# 'dense_logs_new/models/lr_5e-04_seed_3407/diffV_shareQ_PEMS03_5b25_4h_6f_true_loss/nn_4_int_6_Huber/val_10.pth'
+model_pretrained_path = None# 'logs_learnable_emb/models/lr_5e-04_seed_3407/diffV_shareQ_PEMS03_5b25_4h_6f_true_loss/nn_4_int_6_Huber/val_10.pth'
 
 
 print('args.ablation', args.ablation)
@@ -252,24 +252,24 @@ if args.use_stepLR:
     scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, 'min', args.gamma, 5, cooldown=5, min_lr=5e-6) # StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
 
 # tensorboard logger
-tensorboard_logdir = f'./dense_logs_new/TB_log/{experiment_name}/nn_{k_hop}_int_{interval}_{loss_name}'
+tensorboard_logdir = f'./logs_learnable_emb/TB_log/{experiment_name}/nn_{k_hop}_int_{interval}_{loss_name}'
 os.makedirs(tensorboard_logdir, exist_ok=True)
 writer = SummaryWriter(tensorboard_logdir)
 
 # create loggers
-log_dir = f'./dense_logs_new/train_Logs/{experiment_name}'
+log_dir = f'./logs_learnable_emb/train_Logs/{experiment_name}'
 os.makedirs(log_dir, exist_ok=True)
 
 logger = setup_logger('logger1', os.path.join(log_dir, log_filename), logging.DEBUG, to_console=True)
 
 if args.loggrad != -1:
-    grad_logger_dir = f'./dense_logs_new/grad_logs/{experiment_name}'
+    grad_logger_dir = f'./logs_learnable_emb/grad_logs/{experiment_name}'
     os.makedirs(grad_logger_dir, exist_ok=True)
     grad_logger = setup_logger('logger2', os.path.join(grad_logger_dir, log_filename), logging.INFO, to_console=False)
 
 # model save dir
-debug_model_path = os.path.join(f'./dense_logs_new/debug_models/{experiment_name}', f'nn_{k_hop}_int_{interval}_{loss_name}.pth')
-model_dir = os.path.join(f'./dense_logs_new/models/{experiment_name}', f'nn_{k_hop}_int_{interval}_{loss_name}')
+debug_model_path = os.path.join(f'./logs_learnable_emb/debug_models/{experiment_name}', f'nn_{k_hop}_int_{interval}_{loss_name}.pth')
+model_dir = os.path.join(f'./logs_learnable_emb/models/{experiment_name}', f'nn_{k_hop}_int_{interval}_{loss_name}')
 os.makedirs(model_dir, exist_ok=True)
 
 # print('log dir', log_dir)
@@ -310,7 +310,7 @@ if args.start_epochs > 0:
     model = change_model_location(model, model_pretrained_path, device)
 # train models
 # test = True
-plot_list = f'./dense_logs_new/loss_curves/{experiment_name}'
+plot_list = f'./logs_learnable_emb/loss_curves/{experiment_name}'
 os.makedirs(plot_list, exist_ok=True)
 plot_filename = f'nn_{k_hop}_int_{interval}_{loss_name}.png'
 plot_path = os.path.join(plot_list, plot_filename)

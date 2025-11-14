@@ -56,7 +56,7 @@ def laplacian_embeddings(k, n_nodes, edges, u_dist, device, sigma, eps=1e-10, no
     return Q_topk
 
 
-def position_embedding(time_list, half_t_dim, half_tid_dim, half_diw_dim, device):
+def position_embedding(time_list, half_t_dim, half_tid_dim, half_diw_dim, device, t_emb_only=False):
     '''
     time_list: (B, t)
     '''
@@ -77,14 +77,17 @@ def position_embedding(time_list, half_t_dim, half_tid_dim, half_diw_dim, device
     diw_pos_multiplier = torch.pow(10000, torch.arange(0, half_diw_dim, device=device) / half_diw_dim)
     diw_emb[:,:,0::2] = torch.sin(diw_list[:,:,None] / diw_pos_multiplier)
     diw_emb[:,:,1::2] = torch.cos(diw_list[:,:,None] / diw_pos_multiplier)
-
+    if t_emb_only:
+        return t_emb
     emb = torch.cat((t_emb, tid_emb, diw_emb), dim=-1)
     return emb
 
-    
+## TODO: Learnable embeddings    
 class SpatialTemporalEmbedding(nn.Module): # Non-parametric
-    def __init__(self, n_nodes, edges, u_dist, sigma_ratio, device, s_dim, t_dim=10, tid_dim=10, diw_dim=2):
+    def __init__(self, n_nodes, edges, u_dist, sigma_ratio, device, s_dim, t_dim=10, tid_dim=10, diw_dim=2, learnable=False):
         super().__init__()
+        # learnable embeddings
+        self.learnable = learnable
         self.s_dim = s_dim
         self.n_nodes = n_nodes
         self.edges = edges
@@ -94,8 +97,6 @@ class SpatialTemporalEmbedding(nn.Module): # Non-parametric
         self.sigma = self.u_dist.std() / 50
         print(f'new sigma = std(udist)/50 = {self.sigma}')
         self.device = device
-        # unchanged spatial embedding information
-        self.spatial_emb = laplacian_embeddings(self.s_dim, self.n_nodes, self.edges, self.u_dist, self.device, self.sigma) # in (n_nodes, k)
         assert t_dim % 2 == 0, 't_dim should be even'
         assert tid_dim % 2 == 0, 'tid_dim should be even'
         assert diw_dim % 2 == 0, 'diw_dim should be even'
@@ -103,6 +104,16 @@ class SpatialTemporalEmbedding(nn.Module): # Non-parametric
         self.half_t_dim = t_dim // 2
         self.half_tid_dim = tid_dim // 2
         self.half_diw_dim = diw_dim // 2
+
+        # unchanged spatial embedding information
+        if not self.learnable:
+            self.spatial_emb = laplacian_embeddings(self.s_dim, self.n_nodes, self.edges, self.u_dist, self.device, self.sigma) # in (n_nodes, k)
+        else: ## TODO: learnable embeddings
+            self.spatial_emb = Parameter(torch.randn(n_nodes, s_dim)) # in (n_nodes, s_dim)
+            ## TODO: t_emb use position embedding, TID and DIW use learnable
+            self.tid_emb = nn.Embedding(12*24, tid_dim)
+            self.diw_emb = nn.Embedding(7, diw_dim)
+            pass
 
     def forward(self, t_list=None):
         '''
@@ -115,9 +126,17 @@ class SpatialTemporalEmbedding(nn.Module): # Non-parametric
         emb = s_emb
         # x =  torch.cat((x, s_emb), -1)
         if t_list is not None:
-            t_emb = position_embedding(t_list, self.half_t_dim, self.half_tid_dim, self.half_diw_dim, self.device).unsqueeze(2).repeat(1, 1, self.n_nodes, 1) 
-            # print(x.size(), t_emb.size())
-            emb = torch.cat((emb, t_emb), -1)
+            if not self.learnable:
+                t_emb = position_embedding(t_list, self.half_t_dim, self.half_tid_dim, self.half_diw_dim, self.device).unsqueeze(2).repeat(1, 1, self.n_nodes, 1) 
+                # print(x.size(), t_emb.size())
+                emb = torch.cat((emb, t_emb), -1)
+            else: # TODO: learnable temporal embeddings
+                t_emb = position_embedding(t_list, self.half_t_dim, 0, 0, self.device, t_emb_only=True).unsqueeze(2).repeat(1, 1, self.n_nodes, 1)
+                tid_list = t_list % (12 * 24)
+                diw_list = (t_list // (12 * 24)) % 7
+                tid_emb = self.tid_emb(tid_list).unsqueeze(2).repeat(1, 1, self.n_nodes, 1)
+                diw_emb = self.diw_emb(diw_list).unsqueeze(2).repeat(1, 1, self.n_nodes, 1)
+                emb = torch.cat((emb, t_emb, tid_emb, diw_emb), -1)
         return emb
 
 # class SpatialTemporalEmbedding(nn.Module):
