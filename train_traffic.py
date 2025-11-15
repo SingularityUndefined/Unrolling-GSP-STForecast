@@ -64,10 +64,14 @@ parser.add_argument('--loggrad', help='log gradient norms', default=-1, type=int
 parser.add_argument('--tout', help='t_out', default=config['model']['t_out'], type=int)
 parser.add_argument('--trunc', dest='trunc', action='store_true')
 parser.set_defaults(trunc=False)
+
+parser.add_argument('--le_emb', help='learnable embedding', dest='le_emb', action='store_true')
+parser.set_defaults(le_emb=False)
 parser.add_argument('--blocks', help='number of blocks in the model', default=config['model']['num_blocks'], type=int)
 parser.add_argument('--layers', help='number of layers in the model', default=config['model']['num_layers'], type=int)
 parser.add_argument('--CGiters', help='number of CG layers in the model', default=config['model']['CG_iters'], type=int)
 parser.add_argument('--stride', help='sampling stride of dataset', default=config['data_stride'], type=int)
+parser.add_argument('--lr', help='learning rate', default=config['learning_rate'], type=float)
 
 parser.add_argument('--predonly', dest='pred_only', action='store_true')
 parser.set_defaults(pred_only=False)
@@ -84,6 +88,11 @@ config['model']['num_layers'] = args.layers
 config['model']['CG_iters'] = args.CGiters
 # config['model']['t_out'] = args.tout
 
+if args.le_emb:
+    logs_dir = 'logs_learnable_emb'
+else:
+    logs_dir = 'dense_logs_new'
+
 # seed, device, training settings
 seed_everything(args.seed)
 # Hyper-parameter[
@@ -93,7 +102,7 @@ else:
     device = torch.device('cpu')
     
 batch_size = args.batchsize
-learning_rate = config['learning_rate']
+learning_rate = args.lr
 num_epochs = args.epochs
 num_workers = config['num_workers']
 
@@ -230,7 +239,7 @@ model_pretrained_path = None# 'logs_learnable_emb/models/lr_5e-04_seed_3407/diff
 
 
 print('args.ablation', args.ablation)
-model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, interval, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, st_emb_info=config['st_emb_info'], use_extrapolation=config['model']['use_extrapolation'], extrapolation_agg_layers=args.FElayers, use_one_channel=config['model']['use_one_channel'], sharedM=config['model']['sharedM'], sharedQ=config['model']['sharedQ'], diff_interval=config['model']['diff_interval'], predict_only=args.pred_only).to(device)
+model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, interval, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, st_emb_info=config['st_emb_info'], use_extrapolation=config['model']['use_extrapolation'], extrapolation_agg_layers=args.FElayers, use_one_channel=config['model']['use_one_channel'], sharedM=config['model']['sharedM'], sharedQ=config['model']['sharedQ'], diff_interval=config['model']['diff_interval'], predict_only=args.pred_only, le_emb=args.le_emb).to(device)
 # 'UnrollingForecasting/MainExperiments/models/v2/PEMS04/direct_4b_4h_6f/val_15.pth'
     # TODO: map to models
 
@@ -252,24 +261,24 @@ if args.use_stepLR:
     scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, 'min', args.gamma, 5, cooldown=5, min_lr=5e-6) # StepLR(optimizer, step_size=args.stepsize, gamma=args.gamma) # TODO: step size
 
 # tensorboard logger
-tensorboard_logdir = f'./logs_learnable_emb/TB_log/{experiment_name}/nn_{k_hop}_int_{interval}_{loss_name}'
+tensorboard_logdir = f'./{logs_dir}/TB_log/{experiment_name}/nn_{k_hop}_int_{interval}_{loss_name}'
 os.makedirs(tensorboard_logdir, exist_ok=True)
 writer = SummaryWriter(tensorboard_logdir)
 
 # create loggers
-log_dir = f'./logs_learnable_emb/train_Logs/{experiment_name}'
+log_dir = f'./{logs_dir}/train_Logs/{experiment_name}'
 os.makedirs(log_dir, exist_ok=True)
 
 logger = setup_logger('logger1', os.path.join(log_dir, log_filename), logging.DEBUG, to_console=True)
 
 if args.loggrad != -1:
-    grad_logger_dir = f'./logs_learnable_emb/grad_logs/{experiment_name}'
+    grad_logger_dir = f'./l{logs_dir}/grad_logs/{experiment_name}'
     os.makedirs(grad_logger_dir, exist_ok=True)
     grad_logger = setup_logger('logger2', os.path.join(grad_logger_dir, log_filename), logging.INFO, to_console=False)
 
 # model save dir
-debug_model_path = os.path.join(f'./logs_learnable_emb/debug_models/{experiment_name}', f'nn_{k_hop}_int_{interval}_{loss_name}.pth')
-model_dir = os.path.join(f'./logs_learnable_emb/models/{experiment_name}', f'nn_{k_hop}_int_{interval}_{loss_name}')
+debug_model_path = os.path.join(f'./{logs_dir}/debug_models/{experiment_name}', f'nn_{k_hop}_int_{interval}_{loss_name}.pth')
+model_dir = os.path.join(f'./{logs_dir}/models/{experiment_name}', f'nn_{k_hop}_int_{interval}_{loss_name}')
 os.makedirs(model_dir, exist_ok=True)
 
 # print('log dir', log_dir)
@@ -310,7 +319,7 @@ if args.start_epochs > 0:
     model = change_model_location(model, model_pretrained_path, device)
 # train models
 # test = True
-plot_list = f'./logs_learnable_emb/loss_curves/{experiment_name}'
+plot_list = f'./{logs_dir}/loss_curves/{experiment_name}'
 os.makedirs(plot_list, exist_ok=True)
 plot_filename = f'nn_{k_hop}_int_{interval}_{loss_name}.png'
 plot_path = os.path.join(plot_list, plot_filename)

@@ -51,6 +51,7 @@ class UnrollingModel(nn.Module):
                  sharedQ=True,
                  diff_interval=True,
                  predict_only=False,
+                 le_emb=False
                  ):
         super().__init__()
         self.num_blocks = num_blocks
@@ -79,7 +80,7 @@ class UnrollingModel(nn.Module):
         self.use_st_emb = use_st_emb
         if self.use_st_emb:
             # Learnable = True
-            self.st_emb = SpatialTemporalEmbedding(graph_info['n_nodes'], graph_info['u_edges'], graph_info['u_dist'], sigma_ratio, self.device, st_emb_info['spatial_dim'], st_emb_info['t_dim'], st_emb_info['tid_dim'], st_emb_info['diw_dim'], learnable=True)
+            self.st_emb = SpatialTemporalEmbedding(graph_info['n_nodes'], graph_info['u_edges'], graph_info['u_dist'], sigma_ratio, self.device, st_emb_info['spatial_dim'], st_emb_info['t_dim'], st_emb_info['tid_dim'], st_emb_info['diw_dim'], learnable=le_emb)
             signal_emb_channels = signal_channels + st_emb_info['spatial_dim'] + st_emb_info['t_dim'] + st_emb_info['tid_dim'] + st_emb_info['diw_dim']
         else:
             signal_emb_channels = signal_channels
