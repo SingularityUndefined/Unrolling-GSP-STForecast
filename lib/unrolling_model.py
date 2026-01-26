@@ -266,10 +266,13 @@ class UnrollingModel(nn.Module):
                     admm_block.beta_zd.data = torch.clamp(admm_block.beta_zd.data, 0.0)
 
 
-    def forward(self, y, t_list):
+    def forward(self, y, t_list, output_graph=False):
         '''
         y in (batch, t, n_nodes, signal_channels)
         '''
+        if output_graph:
+            directed_graph_list = []
+            undirected_graph_list = []
         # linear extrapolation
         # print('y', y.size(), 't_list', t_list.size())
         B, t, signal_channels = y.size(0), y.size(1), y.size(-1)
@@ -320,6 +323,10 @@ class UnrollingModel(nn.Module):
             # print('max in weights', get_max_in_dict(u_ew), get_max_in_dict(d_ew))
             # print('u_ew', u_ew[0].shape)
             # print('d_ew', d_ew[0].shape)
+            if output_graph:
+                # print('graph shape', u_ew.shape, d_ew.shape)
+                undirected_graph_list.append(u_ew.unsqueeze(1))
+                directed_graph_list.append(d_ew.unsqueeze(1))
             admm_block.u_ew = u_ew
             admm_block.d_ew = d_ew
             try:
@@ -349,7 +356,12 @@ class UnrollingModel(nn.Module):
             output = layer_recovery_on_data(output, self.norm_shape, mean, std)
 
         # print('output', output.size())
-        return output        # 
+        if output_graph:
+            undirected_graphs = torch.cat(undirected_graph_list, 1) # in (n_blocks, n_edges, )
+            directed_graphs = torch.cat(directed_graph_list, 1)
+            return output, undirected_graphs, directed_graphs
+        else:
+            return output        # 
 
 def get_max_in_dict(ew:dict):
     maxlist = []

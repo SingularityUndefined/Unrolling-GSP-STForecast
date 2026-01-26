@@ -403,6 +403,140 @@ def test(model, val_loader, data_normalization, masked_flag, config, device, sig
             return metrics
     # return running_loss
 
+def test_series(model, val_loader, data_normalization, masked_flag, config, device, signal_channels, mode='test', loss_fn=None, use_one_channel=False, use_tqdm=True):
+    model.eval()
+    connect_list = model.connect_list
+    nearest_nodes = model.nearsest_nodes
+    nearest_dists = model.nearest_dists
+    batch_count = 0
+    all_zero_batchs = 0
+    t_out = config['model']['t_out']
+    t_in = config['model']['t_in']
+    output_list = []
+    x_list = []
+    normed_x_list = []
+    normed_output_list = []
+    undirected_graph_list = []
+    directed_graph_list = []
+    with torch.no_grad():
+        rec_mse = 0
+        pred_mse = 0
+        pred_mape = 0
+        pred_mae = 0
+        nearest_loss = 0
+        pred_mse_stepwise = torch.zeros((t_out,))
+        truth_sq_stepwise = torch.zeros((t_out,))
+        truth_sq = 0
+        if not use_one_channel:
+            rec_mse_d = np.zeros((signal_channels,))# .to(device)
+            pred_mse_d = np.zeros((signal_channels,))# .to(device)
+            pred_mape_d = np.zeros((signal_channels,))# .to(device)
+            pred_mae_d = np.zeros((signal_channels,))# .to(device)
+
+        if mode == 'val':
+            running_loss = 0
+
+        if use_tqdm:
+            val_loader_iter = tqdm(val_loader)
+        else:
+            val_loader_iter = val_loader
+
+        for y, x, t_list in val_loader_iter:
+            # if batch_count < 120:
+            #     batch_count += 1
+            #     continue
+            y, x, t_list = y.to(device), x.to(device), t_list.to(device)
+            # y = (y - train_mean) / train_std
+            # y = (y - train_min) / (train_max - train_min)
+            if data_normalization is not None:
+                normed_y = data_normalization.normalize_data(y)
+                normed_x = data_normalization.normalize_data(x, config['model']['use_one_channel'])
+                normed_output, undirected_graphs, directed_graphs = model(normed_y, t_list, output_graph=True)
+                print('graph shape', undirected_graphs.shape, directed_graphs.shape)
+                normed_x_list.append(normed_x.detach().cpu())
+                undirected_graph_list.append(undirected_graphs.detach().cpu())
+                directed_graph_list.append(directed_graphs.detach().cpu())
+                normed_output_list.append(normed_output.detach().cpu())
+                
+                if config['normed_loss']:
+                    if loss_fn is not None:
+                        if masked_flag:
+                            loss = loss_fn(normed_output[:, config['model']['t_in']:], normed_x[:, config['model']['t_in']:])
+                        else:
+                            loss = loss_fn(normed_output, normed_x)
+                        running_loss += loss.item()
+                    # recover data
+                    output = data_normalization.recover_data(normed_output, config['model']['use_one_channel'])
+
+                else:
+                    output = data_normalization.recover_data(normed_output, config['model']['use_one_channel'])
+                    if loss_fn is not None:
+                        if masked_flag:
+                            loss = loss_fn(output[:,config['model']['t_in']:], x[:,config['model']['t_in']:])
+                        else:
+                            loss = loss_fn(output, x)
+                        running_loss += loss.item()
+            else:
+                output, undirected_graphs, directed_graphs = model(y, t_list, output_graph=True)
+                undirected_graph_list.append(undirected_graphs.detach().cpu())
+                directed_graph_list.append(directed_graphs.detach().cpu())
+                # print('graph shape', undirected_graphs.shape, directed_graphs.shape)
+                # load graphs
+                if loss_fn is not None:
+                    if masked_flag:
+                        loss = loss_fn(output[:,config['model']['t_in']:], x[:,config['model']['t_in']:])
+                    else:
+                        loss = loss_fn(output, x)
+                    running_loss += loss.item()
+            
+            # if args.mode == 'normalize':
+            #     output = nn.ReLU()(output)
+            # output = output * (train_max - train_min) + train_min
+            # output = output * train_std + train_mean
+            # if data_normalization is not None:
+            # metrics
+            '''
+            metrics_batch = compute_metrics(output.detach().cpu(), x.detach().cpu(), masked_flag, t_in)
+            rec_mse += metrics_batch['rec_MSE'] # ((x[:,:config['model']['t_in']] - output[:,:config['model']['t_in']]) ** 2).detach().cpu().mean().item()
+            pred_mse += metrics_batch['pred_MSE']
+            pred_mae += metrics_batch['pred_MAE']
+            if metrics_batch['pred_MAPE'] is None:
+                print('exist all zero batchs in ground-truth in pred_mape')
+                all_zero_batchs += 1
+            else:
+                pred_mape += metrics_batch['pred_MAPE']
+            pred_mse_stepwise += metrics_batch['pred_MSE_stepwise']
+            truth_sq_stepwise += metrics_batch['truth_sq_stepwise']
+            truth_sq += metrics_batch['truth_sq']
+            nearest_loss += metrics_batch['nearest_loss']
+            '''
+            output_list.append(output.detach().cpu())
+            x_list.append(x.detach().cpu())
+
+    # TODO: model edge weights
+    full_output = torch.cat(output_list, 0)
+    full_x = torch.cat(x_list, 0)
+    full_normed_output = torch.cat(normed_output_list, 0)
+    full_normed_x = torch.cat(normed_x_list, 0)
+    full_undirected_graphs = torch.cat(undirected_graph_list, 0)
+    full_directed_graphs = torch.cat(directed_graph_list, 0)
+
+    return {
+        'output': full_output,
+        'x': full_x,
+        'normed_output': full_normed_output,
+        'normed_x': full_normed_x,
+        'connect_list': connect_list,
+        'nearest_nodes': nearest_nodes,
+        'nearest_dists': nearest_dists,
+        'undirected_graphs': full_undirected_graphs,
+        'directed_graphs': full_directed_graphs
+    }
+
+            
+            
+    # return running_loss
+
 def compute_metrics(output, x, masked_flag, t_in):
     """
     Compute the metrics for the model

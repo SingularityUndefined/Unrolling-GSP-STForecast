@@ -36,4 +36,5 @@ dense_graph_script.py
 running_commands/*
 dataset_utils/
 dataset_utils/*
+*.pkl
 
