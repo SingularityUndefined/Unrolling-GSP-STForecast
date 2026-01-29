@@ -37,12 +37,12 @@ The default settings are in `config.yaml`. We provide multiple parsers to change
 
 **Example 1**: running main experiment on PEMS03 dataset:
 ```
-python train_traffic.py --dataset PEMS03 --cuda 0 --batchsize 12
+python train_traffic.py --dataset PEMS03 --cuda 0 --batchsize 12 --le_emb --neighbors 4
 ```
 
 **Example 2**: running 'w/o DGLR' experiment on METR-LA dataset:
 ```
-python train_traffic.py --dataset METR-LA --cuda 1 --ablation DGLR --batchsize 16
+python train_traffic.py --dataset METR-LA --cuda 1 --ablation DGLR --batchsize 16 --le_emb
 ```
 
 **Example 3**: testing a UT model on PEMS-BAY:
