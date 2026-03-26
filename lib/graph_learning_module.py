@@ -228,7 +228,7 @@ class GraphLearningModule(nn.Module):
             # multiply two qs
             d = Q_df ** 2 # Q_df * df # in (B, T, interval, N, n_heads, n_channels)
             # print('deplacement', d.max(), d.min(), torch.isnan(d).any())
-            weights = torch.exp(-d).sum(-1) # in (B, T, interval, N, n_heads)
+            weights = torch.exp(-d.sum(-1)) # in (B, T, interval, N, n_heads)
         
         else:
             if self.sharedQ:
@@ -246,7 +246,7 @@ class GraphLearningModule(nn.Module):
             # assert not torch.isnan(Q_i).any(), f'Q_i has NaN value: Q1 in ({self.multiQ1.max().item():.4f}, {self.multiQ1.min().item():.4f}, features in ({features.max()}, {features.min()})'
             # multiply two qs
             d = Q_i * features_j.unsqueeze(2) # Q_df * df # in (B, T, interval, N, n_heads, n_channels)
-            weights = torch.exp(-d).sum(-1) # in (B, T, interval, N, n_heads)
+            weights = torch.exp(-d.sum(-1)) # in (B, T, interval, N, n_heads)
 
         # mask
         mask = torch.ones(T-1, self.interval).tril_(diagonal=0).unsqueeze(0).unsqueeze(3).unsqueeze(4).repeat(B, 1, 1, self.n_nodes, self.n_heads).to(self.device)

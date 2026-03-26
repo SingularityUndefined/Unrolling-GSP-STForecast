@@ -42,12 +42,12 @@ python train_traffic.py --dataset PEMS03 --cuda 0 --batchsize 12 --le_emb --neig
 
 **Example 2**: running 'w/o DGLR' experiment on METR-LA dataset:
 ```
-python train_traffic.py --dataset METR-LA --cuda 1 --ablation DGLR --batchsize 16 --le_emb
+python train_traffic.py --dataset METR-LA --cuda 1 --ablation DGLR --batchsize 16 --le-emb
 ```
 
 **Example 3**: testing a UT model on PEMS-BAY:
 ```
-python test_traffic.py --dataset PEMS-BAY --cuda 0 --ablation UT --batchsize 64 --path <model_checkpoints>
+python test_traffic.py --dataset PEMS-BAY --cuda 0 --ablation UT --batchsize 64 --path <model_checkpoints> --le-emb
 ```
 
 

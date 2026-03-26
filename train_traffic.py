@@ -154,7 +154,7 @@ interval = config['model']['interval']
 feature_channels = config['model']['feature_channels']
 ADMM_iters = config['model']['num_layers']
 
-experiment_name = f"{dataset_name}_s{args.stride}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f"
+experiment_name = f"{dataset_name}_s{args.stride}_{num_admm_blocks}b{ADMM_iters}_{num_heads}h_{feature_channels}f_{args.FElayers}FE"
 
 if args.pred_only:
     experiment_name = 'predOnly_' + experiment_name
