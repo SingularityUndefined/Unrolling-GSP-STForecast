@@ -143,6 +143,7 @@ class GraphSAGELayer(nn.Module):
         x: (B, T, N, C) or (B, T, N, n_heads, C), c = n_in
         output: (B, T, N, n_heads, n_out)
         '''
+        # print(x.shape)
         assert not x.isnan().any(), "Input x contains NaN"
         B, T, N, C = x.size(0), x.size(1), x.size(2), x.size(-1)
         # pad x

@@ -193,6 +193,16 @@ class DirectedTrafficDataset(Dataset):
         self.stride = stride
         self.return_time = return_time
         data = np.load(os.path.join(data_folder, data_file)) # (T, n_in)
+        if len(data.shape) == 2:
+            data = np.expand_dims(data, axis=-1) # (T, n_in, 1)
+        if torch.isnan(torch.Tensor(data)).any():
+            print('data has nan')
+            # locate nan data            
+            nan_indices = np.argwhere(np.isnan(data))
+            print('nan indices:', nan_indices)
+            # fix nan data
+            # data = np.nan_to_num(data, nan=0.0)
+
         self.use_one_channel = use_one_channel
         # data = np.expand_dims(data[:, :, 0], axis=-1)
 
@@ -203,6 +213,7 @@ class DirectedTrafficDataset(Dataset):
         print('nan_count', len(data[np.isnan(data)]))
         # print('datashape', data.shape, data[0:2])
         self.signal_channel = data.shape[-1]
+        print('signal channel', self.signal_channel)
         data_len = data.shape[0]
         # print('dat_len', data_len)
         assert split in ['train', 'val', 'test'], 'split should in train, val or test'
