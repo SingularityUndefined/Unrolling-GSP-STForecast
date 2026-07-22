@@ -681,3 +681,19 @@ def generate_experiment_name(args: argparse.Namespace, config:dict):
 def log_tensorboard():
     pass
 
+def split_params(model):
+    group1 = 0
+    group2 = 0
+
+    for name, p in model.named_parameters():
+        if not p.requires_grad:
+            continue
+
+        if "admm" in name.lower():   # 👉 你自己定义规则
+            group1 += p.numel()
+        elif "graph_learning_module" in name.lower():
+            group2 += p.numel()
+
+    print("admm:", group1)
+    print("graph_learning_module:", group2)
+

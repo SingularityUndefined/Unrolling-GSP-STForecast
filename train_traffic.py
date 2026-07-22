@@ -242,7 +242,8 @@ print('args.ablation', args.ablation)
 model = UnrollingModel(num_admm_blocks, device, T, t_in, num_heads, interval, train_set.signal_channel, feature_channels, GNN_layers=2, graph_info=train_set.graph_info, ADMM_info=ADMM_info, k_hop=k_hop, ablation=args.ablation, st_emb_info=config['st_emb_info'], use_extrapolation=config['model']['use_extrapolation'], extrapolation_agg_layers=args.FElayers, use_one_channel=config['model']['use_one_channel'], sharedM=config['model']['sharedM'], sharedQ=config['model']['sharedQ'], diff_interval=config['model']['diff_interval'], predict_only=args.pred_only, le_emb=args.le_emb).to(device)
 # 'UnrollingForecasting/MainExperiments/models/v2/PEMS04/direct_4b_4h_6f/val_15.pth'
     # TODO: map to models
-
+print('model initialized')
+split_params(model)
 # best_model = copy.deepcopy(model)
 
 ADMM_iters = ADMM_info['ADMM_iters']
