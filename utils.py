@@ -45,13 +45,16 @@ def create_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, nu
 def create_directed_dataloader(dataset_dir, dataset_name, T, t_in, stride, batch_size, num_workers, return_time, use_one_channel=False):
     data_folder = os.path.join(dataset_dir, dataset_name)
     
-    assert dataset_name in ['PEMS-BAY', 'METR-LA']
+    # assert dataset_name in ['PEMS-BAY', 'METR-LA']
     if dataset_name == "PEMS-BAY":
         adj_mat_name = 'pems_adj_mat.npy'
         data_file_name = 'pems_node_values.npy'
-    else: # dataset_name == "METR-LA"
+    elif dataset_name == "METR-LA":
         adj_mat_name = 'adj_mat.npy'
         data_file_name = 'node_values.npy'
+    else: # for GBA and SD
+        adj_mat_name = dataset_name + '_rn_adj.npy'
+        data_file_name = dataset_name + '_his_2019.npy'
     
     train_set = DirectedTrafficDataset(data_folder, adj_mat_name, data_file_name, T, t_in, stride, 'train', return_time=return_time, use_one_channel=use_one_channel)
     val_set = DirectedTrafficDataset(data_folder, adj_mat_name, data_file_name, T, t_in, stride, 'val', return_time=return_time, use_one_channel=use_one_channel)
@@ -145,9 +148,9 @@ class Normalization():
         '''
         if self.mode == 'standardize':
             if use_one_channel:
-                return (x - self.mean[...,0:1]) / self.std[...,0:1]
+                return torch.where(self.std[...,0:1] != 0, (x - self.mean[...,0:1]) / self.std[...,0:1], torch.zeros_like(x))
             else:
-                return (x - self.mean) / self.std
+                return torch.where(self.std != 0, (x - self.mean) / self.std, torch.zeros_like(x))
         elif self.mode == 'normalize':
             if use_one_channel:
                 return (x - self.min[...,0:1]) / (self.max[...,0:1] - self.min[...,0:1])

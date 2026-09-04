@@ -144,6 +144,8 @@ dataset_dir = '../TS_datasets/'
 
 if 'PEMS0' in args.dataset:
     dataset_dir = os.path.join(dataset_dir, 'PEMS0X_data')
+elif args.dataset in ['gba', 'sd']:
+    dataset_dir = os.path.join(dataset_dir, 'LargeST')
 
 experiment_dir = f'lr_{learning_rate:.0e}_seed_{args.seed}'
 # experiment_name = f'{k_hop}_hop_{interval}_int_lr_{learning_rate:.0e}_seed{args.seed}'
